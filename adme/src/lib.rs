@@ -6,3 +6,6 @@ mod util;
 pub use assembler::Assembler;
 pub use interpreter::Cpu;
 pub use memory::*;
+
+#[cfg(feature = "wasm")]
+mod wasm;

@@ -1,7 +1,8 @@
-use crate::util::as_u8;
 use crate::*;
 use core::fmt;
 use core::ops;
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
 
 // Sources:
 // * https://web.cse.ohio-state.edu/~crawfis.3/cse675-02/Slides/MIPS%20Instruction%20Set.pdf
@@ -98,6 +99,7 @@ op! {
 	Xor = 40,
 }
 
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct Cpu {
 	gp: [u32; 32],
 	fp: [f32; 32],
@@ -105,14 +107,6 @@ pub struct Cpu {
 }
 
 impl Cpu {
-	pub fn new() -> Self {
-		Self {
-			gp: [0; 32],
-			fp: [0.0; 32],
-			ip: 0,
-		}
-	}
-
 	pub fn step(&mut self, memory: &mut impl Memory) -> Result<(), StepError> {
 		self.gp[0] = 0;
 
@@ -214,6 +208,24 @@ impl Cpu {
 		J {
 			imm: instr & 0x3ff_ffff,
 		}
+	}
+}
+
+#[cfg(feature = "wasm")]
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
+impl Cpu {
+	#[wasm_bindgen(constructor)]
+	pub fn new() -> Self {
+		Self {
+			gp: [0; 32],
+			fp: [0.0; 32],
+			ip: 0,
+		}
+	}
+
+	#[wasm_bindgen(js_name = "step")]
+	pub fn step_js(&mut self, memory: &mut crate::wasm::Mem) {
+		self.step(memory).unwrap();
 	}
 }
 

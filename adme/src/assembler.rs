@@ -227,6 +227,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			let line = line.split(';').next().unwrap();
 			let line = line.split('#').next().unwrap();
 			let line = line.split("//").next().unwrap();
+			let line = line.trim();
 
 			// Get the mnemonic
 			// If this fails, the line is either empty or a label (or invalid)
