@@ -2,13 +2,18 @@ fn main() {
 	let mut cpu = adme::Cpu::new();
 
 	let mut mem = [0; 128];
-	mem[0] = 0b_001000_00000_00001__00000_00000000001; // addi
-	mem[1] = 0b_000000_00001_00001_00001_00000_100000; // add
-	mem[2] = 0b_000000_00001_00001_00001_00000_100000; // add
-	mem[3] = 0b_000000_00001_00001_00001_00000_100000; // add
-	mem[4] = 0b_000000_00001_00001_00001_00000_100000; // add
 
-	for _ in 0..10 {
+	adme::assemble("
+		# Calculates 8 in a convoluted way
+		// hm yes
+		addi	r1, r0, 1 ; Immediate shit
+		add		r1, r1, r1
+		add		r1, r1, r1
+		add		r1, r1, r1
+		add		r1, r1, r1
+	", &mut mem);
+
+	for _ in 0..6 {
 		cpu.step(&mut mem).unwrap();
 		dbg!(&cpu);
 	}

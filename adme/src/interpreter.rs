@@ -11,7 +11,7 @@ macro_rules! op {
 
 		#[derive(Debug)]
 		#[repr(u8)]
-		enum $ty {
+		pub(crate) enum $ty {
 			$($name = $n,)*
 		}
 
