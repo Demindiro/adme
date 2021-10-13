@@ -1,4 +1,5 @@
 use crate::util::as_u8;
+use crate::*;
 use core::fmt;
 use core::ops;
 
@@ -112,11 +113,10 @@ impl Cpu {
 		}
 	}
 
-	pub fn step(&mut self, memory: &mut [u32]) -> Result<(), StepError> {
+	pub fn step(&mut self, memory: &mut impl Memory) -> Result<(), StepError> {
 		self.gp[0] = 0;
 
-		let ip = usize::try_from(self.ip).unwrap() / 4;
-		let instr = *memory.get(ip).ok_or(StepError::IpOutOfBounds)?;
+		let instr = memory.load_u32(self.ip)?;
 		match Op::try_from(instr)? {
 			Op::Function => match Function::try_from(instr)? {
 				Function::Nop => (),
@@ -140,15 +140,11 @@ impl Cpu {
 
 			Op::Lbu => {
 				let i = Self::decode_i(instr);
-				let mem = as_u8(memory);
-				let ptr = usize::try_from(self.gp[i.s].wrapping_add(i.imm)).unwrap();
-				self.gp[i.t] = mem.get(ptr).copied().ok_or(StepError::Trap)?.into();
+				self.gp[i.t] = memory.load_u8(self.gp[i.s].wrapping_add(i.imm))?.into();
 			}
 			Op::Sb => {
 				let i = Self::decode_i(instr);
-				let mem = as_u8(memory);
-				let ptr = usize::try_from(self.gp[i.s].wrapping_add(i.imm)).unwrap();
-				*mem.get_mut(ptr).ok_or(StepError::Trap)? = self.gp[i.t] as u8;
+				memory.store_u8(self.gp[i.s].wrapping_add(i.imm), self.gp[i.t] as u8)?;
 			}
 			Op::Lui => {
 				let i = Self::decode_i(instr);
@@ -236,6 +232,18 @@ pub enum StepError {
 	IpOutOfBounds,
 	InvalidOp,
 	Trap,
+}
+
+impl From<LoadError> for StepError {
+	fn from(e: LoadError) -> Self {
+		todo!()
+	}
+}
+
+impl From<StoreError> for StepError {
+	fn from(e: StoreError) -> Self {
+		todo!()
+	}
 }
 
 struct R {

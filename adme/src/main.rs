@@ -21,15 +21,55 @@ fn main() {
 
 	let mut cpu = adme::Cpu::new();
 
-	let mut mem = [0; 1024];
+	struct Mem {
+		mem: [u32; 1024],
+	}
 
-	adme::Assembler::assemble(&asm, &mut mem);
+	impl Mem {
+		fn as_u8(mem: &mut [u32]) -> &mut [u8] {
+			unsafe {
+				core::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u8>(), mem.len() * 4)
+			}
+		}
+	}
+
+	impl adme::Memory for Mem {
+		fn load_u8(&mut self, addr: u32) -> Result<u8, adme::LoadError> {
+			let addr = usize::try_from(addr).unwrap();
+			Ok(Self::as_u8(&mut self.mem)[addr])
+		}
+
+		fn store_u8(&mut self, addr: u32, value: u8) -> Result<(), adme::StoreError> {
+			if addr == 0x2000 {
+				eprint!("{}", char::try_from(value).unwrap());
+			} else {
+				let addr = usize::try_from(addr).unwrap();
+				Self::as_u8(&mut self.mem)[addr] = value;
+			}
+			Ok(())
+		}
+
+		fn load_u32(&mut self, addr: u32) -> Result<u32, adme::LoadError> {
+			let addr = usize::try_from(addr).unwrap();
+			Ok(self.mem[addr / 4])
+		}
+
+		fn store_u32(&mut self, addr: u32, value: u32) -> Result<(), adme::StoreError> {
+			let addr = usize::try_from(addr).unwrap();
+			self.mem[addr / 4] = value;
+			Ok(())
+		}
+	}
+
+	let mut mem = Mem {
+		mem: [0; 1024],
+	};
+
+	adme::Assembler::assemble(&asm, &mut mem.mem);
 
 	for _ in 0..85 {
 		cpu.step(&mut mem).unwrap();
 	}
-
-	let _ = dbg!(core::str::from_utf8(&unsafe { core::slice::from_raw_parts(mem.as_ptr().cast::<u8>(), mem.len() * 4) }[1000..1016]));
 }
 
 fn err_usage() -> ! {
