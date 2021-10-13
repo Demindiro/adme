@@ -1,6 +1,6 @@
+use crate::util::as_u8;
 use core::fmt;
-use core::mem;
-use core::slice;
+use core::ops;
 
 // Sources:
 // * https://web.cse.ohio-state.edu/~crawfis.3/cse675-02/Slides/MIPS%20Instruction%20Set.pdf
@@ -113,16 +113,6 @@ impl Cpu {
 	}
 
 	pub fn step(&mut self, memory: &mut [u32]) -> Result<(), StepError> {
-		// SAFETY:
-		// * A &[u8] slice from any &[T] slice will be properly aligned.
-		// * The length is trivially determined and cannot overflow.
-		let memory_u8 = unsafe {
-			slice::from_raw_parts_mut(
-				memory.as_mut_ptr().cast::<u8>(),
-				memory.len() * mem::size_of::<u32>(),
-			)
-		};
-
 		self.gp[0] = 0;
 
 		let ip = usize::try_from(self.ip).unwrap() / 4;
@@ -138,6 +128,32 @@ impl Cpu {
 			},
 			Op::Addi => self.apply_i_checked(instr, u32::checked_add)?,
 			Op::Addiu => self.apply_i(instr, u32::wrapping_add),
+			Op::Ori => self.apply_i(instr, ops::BitOr::bitor),
+
+			Op::Beq => self.branch_i(instr, |a, b| a == b)?,
+			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
+			Op::J => {
+				let j = Self::decode_j(instr);
+				self.ip = self.ip & 0xffc0_0000 | j.imm & 0x3ff_ffff;
+				self.ip = self.ip.wrapping_sub(4);
+			}
+
+			Op::Lbu => {
+				let i = Self::decode_i(instr);
+				let mem = as_u8(memory);
+				let ptr = usize::try_from(self.gp[i.s].wrapping_add(i.imm)).unwrap();
+				self.gp[i.t] = mem.get(ptr).copied().ok_or(StepError::Trap)?.into();
+			}
+			Op::Sb => {
+				let i = Self::decode_i(instr);
+				let mem = as_u8(memory);
+				let ptr = usize::try_from(self.gp[i.s].wrapping_add(i.imm)).unwrap();
+				*mem.get_mut(ptr).ok_or(StepError::Trap)? = self.gp[i.t] as u8;
+			}
+			Op::Lui => {
+				let i = Self::decode_i(instr);
+				self.gp[i.t] = i.imm << 16;
+			}
 			o => todo!("{:?}", o),
 		}
 
@@ -176,11 +192,31 @@ impl Cpu {
 		Ok(())
 	}
 
+	fn branch_i(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> bool) -> Result<(), StepError> {
+		let i = Self::decode_i(instr);
+		if f(self.gp[i.s], self.gp[i.t]) {
+			self.ip = self.ip.wrapping_add(i.imm as i16 as u32);
+		}
+		Ok(())
+	}
+
+	fn store_i(&mut self, instr: u32, f: impl FnOnce(u32, u32, u32) -> Option<()>) -> Result<(), StepError> {
+		let i = Self::decode_i(instr);
+		f(self.gp[i.s], self.gp[i.t], i.imm).ok_or(StepError::Trap)?;
+		Ok(())
+	}
+
 	fn decode_i(instr: u32) -> I {
 		I {
 			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
 			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
 			imm: instr & 0xffff,
+		}
+	}
+
+	fn decode_j(instr: u32) -> J {
+		J {
+			imm: instr & 0x3ff_ffff,
 		}
 	}
 }
@@ -211,5 +247,9 @@ struct R {
 struct I {
 	s: usize,
 	t: usize,
+	imm: u32,
+}
+
+struct J {
 	imm: u32,
 }

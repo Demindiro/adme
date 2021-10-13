@@ -21,14 +21,15 @@ fn main() {
 
 	let mut cpu = adme::Cpu::new();
 
-	let mut mem = [0; 128];
+	let mut mem = [0; 1024];
 
-	adme::assemble(&asm, &mut mem);
+	adme::Assembler::assemble(&asm, &mut mem);
 
-	for _ in 0..6 {
+	for _ in 0..85 {
 		cpu.step(&mut mem).unwrap();
-		dbg!(&cpu);
 	}
+
+	let _ = dbg!(core::str::from_utf8(&unsafe { core::slice::from_raw_parts(mem.as_ptr().cast::<u8>(), mem.len() * 4) }[1000..1016]));
 }
 
 fn err_usage() -> ! {
