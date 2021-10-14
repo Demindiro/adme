@@ -7,6 +7,8 @@ let source_map;
 let cpu_steps;
 let cpu_ip;
 let cpu_gp = [undefined];
+let cpu_hi;
+let cpu_lo;
 let cpu_hz;
 
 let asm_input;
@@ -93,6 +95,8 @@ function update_stats() {
 	for (let i = 1; i < 32; i++) {
 		cpu_gp[i].innerHTML = '0x' + hex(cpu.gp(i), 8);
 	}
+	cpu_hi.innerHTML = '0x' + hex(cpu.hi, 8);
+	cpu_lo.innerHTML = '0x' + hex(cpu.lo, 8);
 
 	// Memory
 	const D = 4;
@@ -151,6 +155,22 @@ function init_html() {
 		}
 		stats.appendChild(tr);
 	}
+
+	let tr = document.createElement('tr');
+
+	let th = document.createElement('th');
+	cpu_hi = document.createElement('td');
+	th.innerHTML = 'HI';
+	tr.appendChild(th);
+	tr.appendChild(cpu_hi);
+	stats.appendChild(tr);
+
+	th = document.createElement('th');
+	cpu_lo = document.createElement('td');
+	th.innerHTML = 'LO';
+	tr.appendChild(th);
+	tr.appendChild(cpu_lo);
+	stats.appendChild(tr);
 
 	cpu_hz = document.getElementById('cpu_hz');
 	cpu_hz.innerHTML = (1 << 3) + ' Hz';

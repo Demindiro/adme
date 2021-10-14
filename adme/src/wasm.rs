@@ -56,6 +56,17 @@ impl Memory for Mem {
 		Ok(())
 	}
 
+	fn load_u16(&mut self, addr: u32) -> Result<u16, LoadError> {
+		let addr = usize::try_from(addr).unwrap();
+		Ok(util::as_u16_mut(&mut self.mem)[addr / 2])
+	}
+
+	fn store_u16(&mut self, addr: u32, value: u16) -> Result<(), StoreError> {
+		let addr = usize::try_from(addr).unwrap();
+		util::as_u16_mut(&mut self.mem)[addr / 2] = value;
+		Ok(())
+	}
+
 	fn load_u32(&mut self, addr: u32) -> Result<u32, LoadError> {
 		let addr = usize::try_from(addr).unwrap();
 		self.mem.get(addr / 4).copied().ok_or(LoadError::OutOfBounds)

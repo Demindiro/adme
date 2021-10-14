@@ -31,6 +31,12 @@ fn main() {
 				core::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u8>(), mem.len() * 4)
 			}
 		}
+
+		fn as_u16(mem: &mut [u32]) -> &mut [u16] {
+			unsafe {
+				core::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u16>(), mem.len() * 2)
+			}
+		}
 	}
 
 	impl adme::Memory for Mem {
@@ -41,11 +47,22 @@ fn main() {
 
 		fn store_u8(&mut self, addr: u32, value: u8) -> Result<(), adme::StoreError> {
 			if addr == 0x2000 {
-				eprint!("{}", char::try_from(value).unwrap());
+				print!("{}", char::try_from(value).unwrap());
 			} else {
 				let addr = usize::try_from(addr).unwrap();
 				Self::as_u8(&mut self.mem)[addr] = value;
 			}
+			Ok(())
+		}
+
+		fn load_u16(&mut self, addr: u32) -> Result<u16, adme::LoadError> {
+			let addr = usize::try_from(addr).unwrap();
+			Ok(Self::as_u16(&mut self.mem)[addr / 2])
+		}
+
+		fn store_u16(&mut self, addr: u32, value: u16) -> Result<(), adme::StoreError> {
+			let addr = usize::try_from(addr).unwrap();
+			Self::as_u16(&mut self.mem)[addr / 2] = value;
 			Ok(())
 		}
 

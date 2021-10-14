@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use core::ops::Range;
 
 struct PendingLabel {
-	left_shift: u8,
+	right_shift: u8,
 	bits: u8,
 	location: u32,
 	flags: u8,
@@ -46,9 +46,10 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.ip = self.ip.wrapping_add(3) & !0x3;
 	}
 
-	fn push_r(&mut self, op: Op, s: u32, t: u32, d: u32, sa: u32, function: Function) {
+	fn push_r(&mut self, s: u32, t: u32, d: u32, sa: u32, function: Function) {
 		self.align_ip();
-		let i = (op as u32) << 26 | s << 21 | t << 16 | d << 11 | sa << 6 | function as u32;
+		// op is always 0
+		let i = s << 21 | t << 16 | d << 11 | sa << 6 | function as u32;
 		self.push_word(i);
 	}
 
@@ -68,15 +69,15 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_word((op as u32) << 26 | imm);
 	}
 
-	fn push_j_label(&mut self, op: Op, label: &'a str, offset: i8) {
+	fn push_j_label(&mut self, op: Op, label: &'a str, bits: Range<u8>, relative: bool) {
 		self.align_ip();
 		self.push_word((op as u32) << 26);
-		self.resolve_label(label, 0..26, offset, PendingLabel::MUST_FIT);
+		self.resolve_label(label, bits, 0, PendingLabel::MUST_FIT | u8::from(relative) * PendingLabel::RELATIVE);
 	}
 
 	fn resolve_label(&mut self, label: &'a str, bits: Range<u8>, offset: i8, flags: u8) {
 		let p = PendingLabel {
-			left_shift: bits.start,
+			right_shift: bits.start,
 			bits: bits.end - bits.start,
 			location: self.ip - 4,
 			flags,
@@ -98,13 +99,12 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	}
 
 	fn set_pending(&mut self, pending: PendingLabel, value: u32) {
-		let value = if pending.flags & PendingLabel::RELATIVE == 0 {
-			value
-		} else {
-			value.wrapping_sub(pending.location)
+		let value = match pending.flags & PendingLabel::RELATIVE != 0 {
+			true => value.wrapping_sub(pending.location),
+			false => value,
 		};
 		let mask = (1 << pending.bits) - 1;
-		let value = (value & mask) << pending.left_shift;
+		let value = (value >> pending.right_shift) & mask;
 		let value = value.wrapping_add(pending.offset as u32);
 		self.memory[usize::try_from(pending.location / 4).unwrap()] |= value;
 	}
@@ -167,6 +167,24 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		]
 	}
 
+	fn decode_2_regs(args: &str) -> [u32; 2] {
+		let mut a = args.split(',');
+		let s = [
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+		];
+		[
+			Self::translate_register(s[0]).unwrap().into(),
+			Self::translate_register(s[1]).unwrap().into(),
+		]
+	}
+
+	fn decode_1_reg(args: &str) -> u32 {
+		let mut a = args.split(',');
+		let s = a.next().unwrap().trim_start();
+		Self::translate_register(s).unwrap().into()
+	}
+
 	fn decode_2_regs_1_imm(args: &str) -> (u32, u32, &str) {
 		let mut a = args.split(',');
 		let s = [
@@ -216,34 +234,64 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		)
 	}
 
-	fn parse_r(&mut self, op: Op, function: Function, args: &str) {
+	fn parse_arithlog(&mut self, function: Function, args: &str) {
 		let [d, t, s] = Self::decode_3_regs(args);
-		self.push_r(op, s, t, d, 0, function)
+		self.push_r(s, t, d, 0, function)
 	}
 
-	fn parse_i_2r(&mut self, op: Op, args: &str) {
+	fn parse_divmult(&mut self, function: Function, args: &str) {
+		let [s, t] = Self::decode_2_regs(args);
+		self.push_r(s, t, 0, 0, function)
+	}
+
+	fn parse_shift(&mut self, function: Function, args: &str) {
+		let (d, t, imm) = Self::decode_2_regs_1_imm(args);
+		self.push_r(imm.parse().unwrap(), t, d, 0, function)
+	}
+
+	fn parse_shiftv(&mut self, function: Function, args: &str) {
+		let [d, t, s] = Self::decode_3_regs(args);
+		self.push_r(s, t, d, 0, function)
+	}
+
+	fn parse_arithlogi(&mut self, op: Op, args: &str) {
 		let (t, s, imm) = Self::decode_2_regs_1_imm(args);
 		let imm = imm.parse().unwrap();
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, s, t, imm)
 	}
 
-	fn parse_i_2r_label(&mut self, op: Op, args: &'a str, offset: i8) {
+	fn parse_branch(&mut self, op: Op, args: &'a str) {
 		let (t, s, imm) = Self::decode_2_regs_1_imm(args);
-		self.push_i_label(op, s, t, imm, 0..16, offset, true)
+		self.push_i_label(op, s, t, imm, 2..18, -1, true)
 	}
 
-	fn parse_i_2r_offset(&mut self, op: Op, args: &str) {
+	fn parse_branchz(&mut self, op: Op, args: &'a str) {
+		let (s, imm) = Self::decode_1_reg_1_imm(args);
+		self.push_i_label(op, s, 0, imm, 2..18, -1, true)
+	}
+
+	fn parse_loadstore(&mut self, op: Op, args: &str) {
 		let [t, s, offset] = Self::decode_2_regs_1_offset(args);
 		assert!(offset <= u32::from(u16::MAX));
 		self.push_i(op, s, t, offset)
 	}
 
-	fn parse_i_1r(&mut self, op: Op, args: &str) {
+	fn parse_loadi(&mut self, op: Op, args: &str) {
 		let (t, imm) = Self::decode_1_reg_1_imm(args);
 		let imm = imm.parse().unwrap();
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, 0, t, imm)
+	}
+
+	fn parse_movefrom(&mut self, function: Function, args: &str) {
+		let d = Self::decode_1_reg(args);
+		self.push_r(0, 0, d, 0, function);
+	}
+
+	fn parse_moveto(&mut self, function: Function, args: &str) {
+		let s = Self::decode_1_reg(args);
+		self.push_r(s, 0, 0, 0, function);
 	}
 
 	fn parse_j(&mut self, op: Op, args: &str) {
@@ -252,8 +300,12 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_j(op, offset)
 	}
 
-	fn parse_j_label(&mut self, op: Op, args: &'a str, offset: i8) {
-		self.push_j_label(op, args.trim(), offset)
+	fn parse_j_label(&mut self, op: Op, args: &'a str) {
+		self.push_j_label(op, args.trim(), 0..26, false)
+	}
+
+	fn parse_jump(&mut self, op: Op, args: &'a str) {
+		self.push_j_label(op, args.trim(), 2..28, true)
 	}
 
 	fn parse_pseudo_li(&mut self, args: &'a str) {
@@ -295,17 +347,54 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			// If this fails, the line is either empty or a label (or invalid)
 			if let Some((mnem, args)) = line.trim().split_once(char::is_whitespace) {
 				match mnem {
-					"add" => slf.parse_r(Op::Function, Function::Add, args),
-					"addi" => slf.parse_i_2r(Op::Addi, args),
-					"beq" => slf.parse_i_2r_label(Op::Beq, args, -4),
-					"bne" => slf.parse_i_2r_label(Op::Bne, args, -4),
-					"j" => slf.parse_j_label(Op::J, args, 0),
-					"lb" => slf.parse_i_2r_offset(Op::Lb, args),
-					"lbu" => slf.parse_i_2r_offset(Op::Lbu, args),
-					"lw" => slf.parse_i_2r_offset(Op::Lw, args),
-					"lui" => slf.parse_i_1r(Op::Lui, args),
+					"add" => slf.parse_arithlog(Function::Add, args),
+					"addu" => slf.parse_arithlog(Function::Addu, args),
+					"addi" => slf.parse_arithlogi(Op::Addi, args),
+					"addiu" => slf.parse_arithlogi(Op::Addiu, args),
+					"and" => slf.parse_arithlog(Function::And, args),
+					"andi" => slf.parse_arithlogi(Op::Andi, args),
+					"div" => slf.parse_divmult(Function::Div, args),
+					"divu" => slf.parse_divmult(Function::Divu, args),
+					"mult" => slf.parse_divmult(Function::Mult, args),
+					"multu" => slf.parse_divmult(Function::Multu, args),
+					"nor" => slf.parse_arithlog(Function::Nor, args),
+					"or" => slf.parse_arithlog(Function::Or, args),
+					"ori" => slf.parse_arithlogi(Op::Ori, args),
+					"sll" => slf.parse_shift(Function::Sll, args),
+					"sllv" => slf.parse_shiftv(Function::Sllv, args),
+					"sra" => slf.parse_shift(Function::Sra, args),
+					"srav" => slf.parse_shiftv(Function::Srav, args),
+					"srl" => slf.parse_shift(Function::Srl, args),
+					"srlv" => slf.parse_shiftv(Function::Srlv, args),
+					"sub" => slf.parse_arithlog(Function::Sub, args),
+					"subu" => slf.parse_arithlog(Function::Subu, args),
+					"xor" => slf.parse_arithlog(Function::Xor, args),
+					"xori" => slf.parse_arithlogi(Op::Xori, args),
+					"lhi" => slf.parse_loadi(Op::Lhi, args),
+					"llo" => slf.parse_loadi(Op::Llo, args),
+					"slt" => slf.parse_arithlog(Function::Slt, args),
+					"sltu" => slf.parse_arithlog(Function::Sltu, args),
+					"slti" => slf.parse_arithlogi(Op::Slti, args),
+					"sltiu" => slf.parse_arithlogi(Op::Sltiu, args),
+					"beq" => slf.parse_branch(Op::Beq, args),
+					"bgtz" => slf.parse_branchz(Op::Bgtz, args),
+					"blez" => slf.parse_branchz(Op::Blez, args),
+					"bne" => slf.parse_branch(Op::Bne, args),
+					"j" => slf.parse_jump(Op::J, args),
+					"lb" => slf.parse_loadstore(Op::Lb, args),
+					"lbu" => slf.parse_loadstore(Op::Lbu, args),
+					"lh" => slf.parse_loadstore(Op::Lh, args),
+					"lhu" => slf.parse_loadstore(Op::Lhu, args),
+					"lw" => slf.parse_loadstore(Op::Lw, args),
+					"lui" => slf.parse_loadi(Op::Lui, args),
 					"li" => slf.parse_pseudo_li(args),
-					"sb" => slf.parse_i_2r_offset(Op::Sb, args),
+					"sb" => slf.parse_loadstore(Op::Sb, args),
+					"sh" => slf.parse_loadstore(Op::Sh, args),
+					"sw" => slf.parse_loadstore(Op::Sw, args),
+					"mfhi" => slf.parse_movefrom(Function::Mfhi, args),
+					"mflo" => slf.parse_movefrom(Function::Mflo, args),
+					"mthi" => slf.parse_moveto(Function::Mthi, args),
+					"mtlo" => slf.parse_moveto(Function::Mtlo, args),
 					".ascii" => slf.parse_ascii(args, false),
 					".asciz" => slf.parse_ascii(args, true),
 					op => todo!("{}", op),

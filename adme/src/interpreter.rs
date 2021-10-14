@@ -10,7 +10,7 @@ macro_rules! op {
 	{ [$ty:ident ($lb:literal .. $rb:literal)] $($name:ident = $n:literal,)* } => {
 		const _: usize = $lb - $rb - 1;
 
-		#[derive(Debug)]
+		#[derive(Clone, Copy, Debug)]
 		#[repr(u8)]
 		pub(crate) enum $ty {
 			$($name = $n,)*
@@ -34,7 +34,6 @@ op! {
 
 	Function = 0,
 
-	Bltz = 1,
 	J = 2,
 	Jal = 3,
 	Beq = 4,
@@ -54,40 +53,46 @@ op! {
 
 	Lui = 15,
 
-	Exception = 16,
+	Llo = 20,
+	Lhi = 21,
 
-	Fp = 17,
-
-	Lw = 35,
-	Sw = 43,
-
-	Lbu = 36,
 	Lb  = 32,
-	Sb  = 40,
-
-	Lwcl = 49,
-	Swcl = 57,
+	Lh  = 33,
+	Lw = 35,
+	Lbu = 36,
+	Lhu = 37,
+	Sb = 40,
+	Sh = 41,
+	Sw = 43,
 }
 
 op! {
 	[Function (6..0)]
 
-	Nop = 0,
 	Jr = 8,
 	Jalr = 9,
 
 	Mfhi = 16,
+	Mthi = 17,
 	Mflo = 18,
+	Mtlo = 19,
 
 	Add  = 32,
 	Addu = 33,
 	Sub  = 34,
 	Subu = 35,
 
-	Mul  = 24,
-	Mulu = 25,
+	Mult  = 24,
+	Multu = 25,
 	Div  = 26,
 	Divu = 27,
+
+	Sll  = 0b000,
+	Srl  = 0b010,
+	Sra  = 0b011,
+	Sllv = 0b100,
+	Srlv = 0b110,
+	Srav = 0b111,
 
 	Slt  = 42,
 	Sltu = 43,
@@ -104,6 +109,8 @@ pub struct Cpu {
 	fp: [f32; 32],
 	ip: u32,
 	steps: u32,
+	hi: u32,
+	lo: u32,
 }
 
 impl Cpu {
@@ -111,43 +118,172 @@ impl Cpu {
 		self.gp[0] = 0;
 
 		let instr = memory.load_u32(self.ip)?;
+		self.ip = self.ip.wrapping_add(4);
 		match Op::try_from(instr)? {
 			Op::Function => match Function::try_from(instr)? {
-				Function::Nop => (),
 				Function::Add => self.apply_r_checked(instr, u32::checked_add)?,
 				Function::Addu => self.apply_r(instr, u32::wrapping_add),
+				Function::And => self.apply_r(instr, |a, b| a & b),
+				Function::Nor => self.apply_r(instr, |a, b| !(a | b)),
+				Function::Or => self.apply_r(instr, |a, b| a | b),
+				Function::Div => {
+					let r = Self::decode_r(instr);
+					if self.gp[r.t] == 0 {
+						return Err(StepError::Trap);
+					}
+					self.hi = (self.gp[r.s] as i32 % self.gp[r.t] as i32) as u32;
+					self.lo = (self.gp[r.s] as i32 / self.gp[r.t] as i32) as u32;
+				}
+				Function::Divu => {
+					let r = Self::decode_r(instr);
+					if self.gp[r.t] == 0 {
+						return Err(StepError::Trap);
+					}
+					self.hi = self.gp[r.s] % self.gp[r.t];
+					self.lo = self.gp[r.s] / self.gp[r.t];
+				}
+				Function::Mult => {
+					let r = Self::decode_r(instr);
+					let r = i64::from(self.gp[r.s] as i32) * i64::from(self.gp[r.t] as i32);
+					self.hi = (r as u64 >> 32) as u32;
+					self.lo = r as u64 as u32;
+				}
+				Function::Multu => {
+					let r = Self::decode_r(instr);
+					let r = u64::from(self.gp[r.s]) * u64::from(self.gp[r.t]);
+					self.hi = (r >> 32) as u32;
+					self.lo = r as u32;
+				}
+				Function::Sll => {
+					let r = Self::decode_r(instr);
+					self.gp[r.d] = self.gp[r.t].wrapping_shl(r.s as u32);
+				}
+				Function::Srl => {
+					let r = Self::decode_r(instr);
+					self.gp[r.d] = self.gp[r.t].wrapping_shr(r.s as u32);
+				}
+				Function::Sra => {
+					let r = Self::decode_r(instr);
+					self.gp[r.d] = (self.gp[r.t] as i32).wrapping_shr(r.s as u32) as u32;
+				}
+				Function::Sllv => self.apply_r(instr, u32::wrapping_shl),
+				Function::Srlv => self.apply_r(instr, u32::wrapping_shl),
+				Function::Srav => self.apply_r(instr, |a, b| (a as i32).wrapping_shr(b) as u32),
 				Function::Sub => self.apply_r_checked(instr, u32::checked_sub)?,
 				Function::Subu => self.apply_r(instr, u32::wrapping_sub),
-				f => todo!("{:?}", f),
+				Function::Xor => self.apply_r(instr, |a, b| a ^ b),
+
+				Function::Slt => self.apply_r(instr, |a, b| u32::from((a as i32) < b as i32)),
+				Function::Sltu => self.apply_r(instr, |a, b| u32::from(a < b)),
+
+				Function::Jr => {
+					let r = Self::decode_r(instr);
+					self.ip = self.gp[r.s];
+				}
+				Function::Jalr => {
+					let r = Self::decode_r(instr);
+					self.gp[31] = self.ip;
+					self.ip = self.gp[r.s];
+				}
+
+				Function::Mfhi => {
+					let r = Self::decode_r(instr);
+					self.gp[r.d] = self.hi;
+				}
+				Function::Mflo => {
+					let r = Self::decode_r(instr);
+					self.gp[r.d] = self.lo;
+				}
+				Function::Mthi => {
+					let r = Self::decode_r(instr);
+					self.hi = self.gp[r.s];
+				}
+				Function::Mtlo => {
+					let r = Self::decode_r(instr);
+					self.lo = self.gp[r.s];
+				}
 			},
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
 			Op::Addiu => self.apply_i(instr, |a, b| a.wrapping_add(b as i16 as u32)),
+			Op::Andi => self.apply_i(instr, |a, b| a & u32::from(b)),
 			Op::Ori => self.apply_i(instr, |a, b| a | u32::from(b)),
+			Op::Xori => self.apply_i(instr, |a, b| a ^ u32::from(b)),
+
+			Op::Slti => self.apply_i(instr, |a, b| u32::from((a as i32) < i32::from(b as i16))),
+			Op::Sltiu => self.apply_i(instr, |a, b| u32::from(a < u32::from(b))),
 
 			Op::Beq => self.branch_i(instr, |a, b| a == b)?,
+			Op::Bgtz => self.branch_i(instr, |a, _| a as i32 > 0)?,
+			Op::Blez => self.branch_i(instr, |a, _| a as i32 <= 0)?,
 			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
 			Op::J => {
 				let j = Self::decode_j(instr);
-				self.ip = self.ip & 0xffc0_0000 | j.imm & 0x3ff_ffff;
-				self.ip = self.ip.wrapping_sub(4);
+				// Make 26 bit unsigned int into 28 bit signed int.
+				let offset = (((j.imm << 6) as i32) >> 4) as u32;
+				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
+			}
+			Op::Jal => {
+				let j = Self::decode_j(instr);
+				// Make 26 bit unsigned int into 28 bit signed int.
+				let offset = (((j.imm << 6) as i32) >> 4) as u32;
+				self.gp[31] = self.ip;
+				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
 
+			Op::Lb => {
+				let i = Self::decode_i(instr);
+				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i.t] = m as i8 as i32 as u32;
+			}
 			Op::Lbu => {
 				let i = Self::decode_i(instr);
-				self.gp[i.t] = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?.into();
+				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i.t] = m.into();
 			}
-			Op::Sb => {
+			Op::Lh => {
 				let i = Self::decode_i(instr);
-				memory.store_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t] as u8)?;
+				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i.t] = m as i16 as i32 as u32;
+			}
+			Op::Lhu => {
+				let i = Self::decode_i(instr);
+				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i.t] = m.into();
+			}
+			Op::Lw => {
+				let i = Self::decode_i(instr);
+				let m = memory.load_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i.t] = m;
 			}
 			Op::Lui => {
 				let i = Self::decode_i(instr);
 				self.gp[i.t] = u32::from(i.imm) << 16;
 			}
-			o => todo!("{:?}", o),
+			Op::Lhi => {
+				let i = Self::decode_i(instr);
+				self.gp[i.t] &= 0x0000_ffff;
+				self.gp[i.t] |= u32::from(i.imm) << 16;
+			}
+			Op::Llo => {
+				let i = Self::decode_i(instr);
+				self.gp[i.t] &= 0xffff_0000;
+				self.gp[i.t] |= u32::from(i.imm);
+			}
+
+			Op::Sb => {
+				let i = Self::decode_i(instr);
+				memory.store_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t] as u8)?;
+			}
+			Op::Sh => {
+				let i = Self::decode_i(instr);
+				memory.store_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t] as u16)?;
+			}
+			Op::Sw => {
+				let i = Self::decode_i(instr);
+				memory.store_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t])?;
+			}
 		}
 
-		self.ip = self.ip.wrapping_add(4);
 		self.steps = self.steps.wrapping_add(1);
 
 		Ok(())
@@ -186,7 +322,7 @@ impl Cpu {
 	fn branch_i(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> bool) -> Result<(), StepError> {
 		let i = Self::decode_i(instr);
 		if f(self.gp[i.s], self.gp[i.t]) {
-			self.ip = self.ip.wrapping_add(i.imm as i16 as u32);
+			self.ip = self.ip.wrapping_add((i.imm as i16 as u32) << 2);
 		}
 		Ok(())
 	}
@@ -221,6 +357,8 @@ impl Cpu {
 			fp: [0.0; 32],
 			ip: 0,
 			steps: 0,
+			hi: 0,
+			lo: 0,
 		}
 	}
 
@@ -243,6 +381,16 @@ impl Cpu {
 	#[cfg_attr(feature = "wasm", wasm_bindgen)]
 	pub fn gp(&self, reg: u8) -> Option<u32> {
 		(1 <= reg && reg < 32).then(|| self.gp[usize::from(reg)])
+	}
+
+	#[cfg_attr(feature = "wasm", wasm_bindgen(method, getter))]
+	pub fn hi(&self) -> u32 {
+		self.hi
+	}
+
+	#[cfg_attr(feature = "wasm", wasm_bindgen(method, getter))]
+	pub fn lo(&self) -> u32 {
+		self.lo
 	}
 }
 
