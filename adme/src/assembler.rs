@@ -1,4 +1,4 @@
-use crate::util::as_u8;
+use crate::util::as_u8_mut;
 use crate::interpreter::{Op, Function};
 use std::collections::HashMap;
 use core::ops::Range;
@@ -25,7 +25,7 @@ pub struct Assembler<'a, 'b> {
 
 impl<'a, 'b> Assembler<'a, 'b> {
 	fn push_byte(&mut self, byte: u8) {
-		let mem = as_u8(self.memory);
+		let mem = as_u8_mut(self.memory);
 		mem[usize::try_from(self.ip).unwrap()] = byte;
 		self.ip = self.ip.wrapping_add(1);
 	}

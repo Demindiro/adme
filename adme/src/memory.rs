@@ -10,10 +10,13 @@ pub trait Memory {
 
 #[derive(Debug)]
 pub enum LoadError {
-
+	OutOfBounds,
+	BadAlignment,
 }
 
 #[derive(Debug)]
 pub enum StoreError {
-
+	OutOfBounds,
+	NotWriteable,
+	BadAlignment,
 }

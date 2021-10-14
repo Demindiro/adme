@@ -104,6 +104,7 @@ pub struct Cpu {
 	gp: [u32; 32],
 	fp: [f32; 32],
 	ip: u32,
+	steps: u32,
 }
 
 impl Cpu {
@@ -148,6 +149,7 @@ impl Cpu {
 		}
 
 		self.ip = self.ip.wrapping_add(4);
+		self.steps = self.steps.wrapping_add(1);
 
 		Ok(())
 	}
@@ -211,21 +213,37 @@ impl Cpu {
 	}
 }
 
-#[cfg(feature = "wasm")]
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl Cpu {
-	#[wasm_bindgen(constructor)]
+	#[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
 	pub fn new() -> Self {
 		Self {
 			gp: [0; 32],
 			fp: [0.0; 32],
 			ip: 0,
+			steps: 0,
 		}
 	}
 
-	#[wasm_bindgen(js_name = "step")]
-	pub fn step_js(&mut self, memory: &mut crate::wasm::Mem) {
-		self.step(memory).unwrap();
+	#[cfg_attr(feature = "wasm", wasm_bindgen(js_name = "step"))]
+	pub fn step_js(&mut self, memory: &mut crate::wasm::Mem) -> Result<(), JsValue> {
+		self.step(memory)
+			.map_err(|e| format!("{:?}", e).into())
+	}
+
+	#[cfg_attr(feature = "wasm", wasm_bindgen(method, getter))]
+	pub fn steps(&self) -> u32 {
+		self.steps
+	}
+
+	#[cfg_attr(feature = "wasm", wasm_bindgen(method, getter))]
+	pub fn ip(&self) -> u32 {
+		self.ip
+	}
+
+	#[cfg_attr(feature = "wasm", wasm_bindgen)]
+	pub fn gp(&self, reg: u8) -> Option<u32> {
+		(1 <= reg && reg < 32).then(|| self.gp[usize::from(reg)])
 	}
 }
 
@@ -244,17 +262,19 @@ pub enum StepError {
 	IpOutOfBounds,
 	InvalidOp,
 	Trap,
+	LoadError(LoadError),
+	StoreError(StoreError),
 }
 
 impl From<LoadError> for StepError {
 	fn from(e: LoadError) -> Self {
-		todo!()
+		Self::LoadError(e)
 	}
 }
 
 impl From<StoreError> for StepError {
 	fn from(e: StoreError) -> Self {
-		todo!()
+		Self::StoreError(e)
 	}
 }
 
