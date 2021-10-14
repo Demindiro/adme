@@ -42,10 +42,14 @@ function error(err) {
 	document.getElementById('error').innerHTML = err;
 }
 
-function step() {
+function step(manual = false) {
 	try {
-		for (let i = 0; i < Math.max(1, run_hz / MIN_HZ); i++)
+		if (manual) {
 			cpu.step(mem);
+		} else {
+			for (let i = 0; i < Math.max(1, run_hz / MIN_HZ); i++)
+				cpu.step(mem);
+		}
 	} catch (e) {
 		error(e);
 	}
