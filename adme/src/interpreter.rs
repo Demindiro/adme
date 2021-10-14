@@ -1,6 +1,5 @@
 use crate::*;
 use core::fmt;
-use core::ops;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -121,9 +120,9 @@ impl Cpu {
 				Function::Subu => self.apply_r(instr, u32::wrapping_sub),
 				f => todo!("{:?}", f),
 			},
-			Op::Addi => self.apply_i_checked(instr, u32::checked_add)?,
-			Op::Addiu => self.apply_i(instr, u32::wrapping_add),
-			Op::Ori => self.apply_i(instr, ops::BitOr::bitor),
+			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
+			Op::Addiu => self.apply_i(instr, |a, b| a.wrapping_add(b as i16 as u32)),
+			Op::Ori => self.apply_i(instr, |a, b| a | u32::from(b)),
 
 			Op::Beq => self.branch_i(instr, |a, b| a == b)?,
 			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
@@ -135,15 +134,15 @@ impl Cpu {
 
 			Op::Lbu => {
 				let i = Self::decode_i(instr);
-				self.gp[i.t] = memory.load_u8(self.gp[i.s].wrapping_add(i.imm))?.into();
+				self.gp[i.t] = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?.into();
 			}
 			Op::Sb => {
 				let i = Self::decode_i(instr);
-				memory.store_u8(self.gp[i.s].wrapping_add(i.imm), self.gp[i.t] as u8)?;
+				memory.store_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t] as u8)?;
 			}
 			Op::Lui => {
 				let i = Self::decode_i(instr);
-				self.gp[i.t] = i.imm << 16;
+				self.gp[i.t] = u32::from(i.imm) << 16;
 			}
 			o => todo!("{:?}", o),
 		}
@@ -173,12 +172,12 @@ impl Cpu {
 		}
 	}
 
-	fn apply_i(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> u32) {
+	fn apply_i(&mut self, instr: u32, f: impl FnOnce(u32, u16) -> u32) {
 		let i = Self::decode_i(instr);
 		self.gp[i.t] = f(self.gp[i.s], i.imm);
 	}
 
-	fn apply_i_checked(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> Option<u32>) -> Result<(), StepError> {
+	fn apply_i_checked(&mut self, instr: u32, f: impl FnOnce(u32, u16) -> Option<u32>) -> Result<(), StepError> {
 		let i = Self::decode_i(instr);
 		self.gp[i.t] = f(self.gp[i.s], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
@@ -192,7 +191,7 @@ impl Cpu {
 		Ok(())
 	}
 
-	fn store_i(&mut self, instr: u32, f: impl FnOnce(u32, u32, u32) -> Option<()>) -> Result<(), StepError> {
+	fn store_i(&mut self, instr: u32, f: impl FnOnce(u32, u32, u16) -> Option<()>) -> Result<(), StepError> {
 		let i = Self::decode_i(instr);
 		f(self.gp[i.s], self.gp[i.t], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
@@ -202,7 +201,7 @@ impl Cpu {
 		I {
 			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
 			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
-			imm: instr & 0xffff,
+			imm: instr as u16,
 		}
 	}
 
@@ -287,7 +286,7 @@ struct R {
 struct I {
 	s: usize,
 	t: usize,
-	imm: u32,
+	imm: u16,
 }
 
 struct J {
