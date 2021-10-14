@@ -23,12 +23,12 @@
 		<pre id="memory"></pre>
 		<textarea id="code" placeholder="Enter assembly here..." style="width:300px;height:500px">
 	li		$1, hello_str
-	li		$3, 8192
+	li		gp, 8192
 
 loop:
 	lbu		$2, 0($1)
 	beq		$2, $0, done
-	sb		$2, 0($3)
+	sb		$2, 0($gp)
 	addi		$1, $1, 1
 	j		loop
 done:
@@ -36,7 +36,7 @@ done:
 	addi		$1, $0, 0
 idle:
 	addi		$1, $1, 1
-	sb		$1, 0($0)
+	sb		$1, 0(zero)
 	j		idle
 
 hello_str:

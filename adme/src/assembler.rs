@@ -102,58 +102,106 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.memory[usize::try_from(pending.location / 4).unwrap()] |= value;
 	}
 
+	fn translate_register(reg: &str) -> Option<u8> {
+		// Stupid? Yes.
+		// Easiest? Also yes.
+		// I bet it's the fastest too ;)
+		Some(match reg {
+			"zero" | "$0" => 0,
+			"AT" | "$at" | "$1" => 1,
+			"v0" | "$2" => 2,
+			"v1" | "$3" => 3,
+			"a0" | "$4" => 4,
+			"a1" | "$5" => 5,
+			"a2" | "$6" => 6,
+			"a3" | "$7" => 7,
+			"t0" | "$8" => 8,
+			"t1" | "$9" => 9,
+			"t2" | "$10" => 10,
+			"t3" | "$11" => 11,
+			"t4" | "$12" => 12,
+			"t5" | "$13" => 13,
+			"t6" | "$14" => 14,
+			"t7" | "$15" => 15,
+			"s0" | "$16" => 16,
+			"s1" | "$17" => 17,
+			"s2" | "$18" => 18,
+			"s3" | "$19" => 19,
+			"s4" | "$20" => 20,
+			"s5" | "$21" => 21,
+			"s6" | "$22" => 22,
+			"s7" | "$23" => 23,
+			"t8" | "$24" => 24,
+			"t9" | "$25" => 25,
+			"kt0" | "$26" => 26,
+			"kt1" | "$27" => 27,
+			"gp" | "$gp" | "$28" => 28,
+			"sp" | "$sp" | "$29" => 29,
+			"s8" | "$30" => 30,
+			"ra" | "$31" => 31,
+			_ => return None,
+		})
+	}
+
 	fn decode_3_regs(args: &str) -> [u32; 3] {
-		let mut s = [None; 3];
-		for (i, a) in args.split(',').enumerate() {
-			s[i] = Some(a.trim_start());
-		}
-		let mut r = [0; 3];
-		for (r, s) in r.iter_mut().zip(s) {
-			*r = u32::from_str_radix(&s.unwrap()[1..], 10).unwrap();
-		}
-		r
+		let mut a = args.split(',');
+		let s = [
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+		];
+		[
+			Self::translate_register(s[0]).unwrap().into(),
+			Self::translate_register(s[1]).unwrap().into(),
+			Self::translate_register(s[2]).unwrap().into(),
+		]
 	}
 
 	fn decode_2_regs_1_imm(args: &str) -> (u32, u32, &str) {
-		let mut s = [None; 3];
-		for (i, a) in args.split(',').enumerate() {
-			s[i] = Some(a.trim_start());
-		}
+		let mut a = args.split(',');
+		let s = [
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+		];
 		(
-			s[0].unwrap()[1..].parse().unwrap(),
-			s[1].unwrap()[1..].parse().unwrap(),
-			s[2].unwrap()
+			Self::translate_register(s[0]).unwrap().into(),
+			Self::translate_register(s[1]).unwrap().into(),
+			s[2],
 		)
 	}
 
 	fn decode_2_regs_1_offset(args: &str) -> [u32; 3] {
-		let mut s = [None; 2];
-		for (i, a) in args.split(',').enumerate() {
-			s[i] = Some(a.trim_start());
-		}
-		let (reg, offt) = Self::decode_reg_offset(s[1].unwrap());
+		let mut a = args.split(',');
+		let s = [
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+		];
+		let (reg, offt) = Self::decode_reg_offset(s[1]);
 		[
-			s[0].unwrap()[1..].parse().unwrap(),
+			Self::translate_register(s[0]).unwrap().into(),
 			reg,
 			offt,
 		]
 	}
 
 	fn decode_1_reg_1_imm(args: &str) -> (u32, &str) {
-		let mut s = [None; 2];
-		for (i, a) in args.split(',').enumerate() {
-			s[i] = Some(a.trim_start());
-		}
+		let mut a = args.split(',');
+		let s = [
+			a.next().unwrap().trim_start(),
+			a.next().unwrap().trim_start(),
+		];
 		(
-			u32::from_str_radix(&s[0].unwrap()[1..], 10).unwrap(),
-			s[1].unwrap(),
+			Self::translate_register(s[0]).unwrap().into(),
+			s[1],
 		)
 	}
 
 	fn decode_reg_offset(arg: &str) -> (u32, u32) {
 		let (offset, reg) = arg.split_once('(').unwrap();
+		assert_eq!(reg.chars().last(), Some(')'));
 		(
-			reg[1..reg.len() - 1].parse().unwrap(),
+			Self::translate_register(&reg[..reg.len() - 1]).unwrap().into(),
 			offset.parse().unwrap(),
 		)
 	}

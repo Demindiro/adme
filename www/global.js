@@ -79,7 +79,7 @@ function set_run_hz(e) {
 
 function update_stats() {
 	document.getElementById('cpu_steps').innerHTML = cpu.steps;
-	cpu_ip.innerHTML = '0x' + hex(cpu.ip, 9);
+	cpu_ip.innerHTML = '0x' + hex(cpu.ip, 8);
 
 	for (let i = 1; i < 32; i++) {
 		cpu_gp[i].innerHTML = '0x' + hex(cpu.gp(i), 8);

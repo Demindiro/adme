@@ -1,11 +1,11 @@
-	li		$1, hello_str
-	li		$3, 8192
+	li		t0, hello_str
+	li		t1, 8192
 
 loop:
-	lbu		$2, 0($1)
-	beq		$2, $0, done
-	sb		$2, 0($3)
-	addi	$1, $1, 1
+	lbu		t2, 0(t0)
+	beq		t2, zero, done
+	sb		t2, 0(t1)
+	addi	t0, t0, 1
 	j		loop
 done:
 
