@@ -258,7 +258,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	}
 
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) {
-		args.as_bytes()[1..args.len() - 1].iter().for_each(|b| self.push_byte(*b));
+		snailquote::unescape(args).unwrap().bytes().for_each(|b| self.push_byte(b));
 		zero_terminate.then(|| self.push_byte(0));
 	}
 
@@ -292,6 +292,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"lui" => slf.parse_i_1r(Op::Lui, args),
 					"li" => slf.parse_pseudo_li(args),
 					"sb" => slf.parse_i_2r_offset(Op::Sb, args),
+					".ascii" => slf.parse_ascii(args, false),
 					".asciz" => slf.parse_ascii(args, true),
 					op => todo!("{}", op),
 				};
