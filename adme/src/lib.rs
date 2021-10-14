@@ -3,7 +3,7 @@ mod interpreter;
 mod memory;
 mod util;
 
-pub use assembler::Assembler;
+pub use assembler::{Assembler, SourceMap};
 pub use interpreter::Cpu;
 pub use memory::*;
 

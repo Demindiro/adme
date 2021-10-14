@@ -68,6 +68,6 @@ impl Memory for Mem {
 }
 
 #[wasm_bindgen]
-pub fn assemble(source: &str, memory: &mut Mem) {
-	Assembler::assemble(source, &mut memory.mem);
+pub fn assemble(source: &str, memory: &mut Mem) -> SourceMap {
+	Assembler::assemble(source, &mut memory.mem)
 }

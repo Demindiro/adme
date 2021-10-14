@@ -2,6 +2,7 @@ let cpu;
 let mem;
 let assemble_asm;
 let new_cpu;
+let source_map;
 
 let cpu_steps;
 let cpu_ip;
@@ -9,11 +10,13 @@ let cpu_gp = [undefined];
 let cpu_hz;
 
 let asm_input;
+let asm_input_highlight;
+let asm_input_backdrop;
 
 let memory;
 
 let run_interval;
-let run_hz = 1;
+let run_hz = 8;
 
 // setInterval delay cannot be arbitrarily low - assume 64 Hz is reasonable.
 // We're also using powers of 2 for herts, so dividing by this value makes things easy.
@@ -78,6 +81,8 @@ function set_run_hz(e) {
 }
 
 function update_stats() {
+
+	// CPU
 	document.getElementById('cpu_steps').innerHTML = cpu.steps;
 	cpu_ip.innerHTML = '0x' + hex(cpu.ip, 8);
 
@@ -85,6 +90,7 @@ function update_stats() {
 		cpu_gp[i].innerHTML = '0x' + hex(cpu.gp(i), 8);
 	}
 
+	// Memory
 	const D = 4;
 
 	let t = '     <b>'
@@ -102,10 +108,19 @@ function update_stats() {
 		}
 	}
 	memory.innerHTML = t;
+
+	// Source map
+	let line = source_map && source_map.get_line(cpu.ip);
+	let total_lines = asm_input.value.split('\n').length - 1;
+	asm_input_highlight.innerHTML = line !== undefined
+		// Add a couple extra lines to compensate for horizontal scroll bar
+		? '\n'.repeat(line) + '<mark> </mark>' + '\n'.repeat(total_lines - line + 3)
+		: '';
 }
 
 function assemble() {
-	assemble_asm(asm_input.innerHTML, mem);
+	source_map = assemble_asm(asm_input.value, mem);
+	console.log(source_map);
 	cpu = new_cpu();
 	update_stats();
 	serial_clear();
@@ -137,16 +152,16 @@ function init_html() {
 	cpu_hz.innerHTML = (1 << 3) + ' Hz';
 
 	memory = document.getElementById('memory');
-	let t = '';
-	for (let i = 0; i < MEM_HEIGHT * MEM_WIDTH; i++) {
-		t += '00 ';
-		if (i % MEM_WIDTH === MEM_WIDTH - 1) {
-			t += '\n';
-		}
-	}
-	memory.innerHTML = t;
 
-	asm_input = document.getElementById('code');
+	asm_input = document.getElementById('code_input');
+	asm_input_highlight = document.getElementById('code_highlight');
+	asm_input_backdrop = document.getElementById('code_backdrop');
 
-	update_stats();
+	// Stuff for highlighting assembly lines from source map
+	asm_input.onscroll = () => {
+		asm_input_backdrop.scrollTop = asm_input.scrollTop;
+		asm_input_backdrop.scrollLeft = asm_input.scrollLeft;
+	};
+
+	assemble();
 }

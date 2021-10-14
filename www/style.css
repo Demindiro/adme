@@ -1,0 +1,62 @@
+body {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-around;
+}
+
+.section {
+	display: flex;
+	flex-direction: column;
+}
+
+#cpu_registers {
+	display: flex;
+	flex-direction: row-reverse;
+}
+
+#code {
+	width: 300px;
+	height: 200px;
+}
+
+#code_input {
+	display: block;
+	position: absolute;
+	z-index: 2;
+	background-color: transparent;
+	box-sizing: border-box;
+	width: inherit;
+	height: inherit;
+	margin: 0;
+	resize: none;
+	border: black inset 3px;
+	vertical-align: bottom;
+	white-space: pre;
+	overflow-x: auto;
+	overflow-y: auto;
+}
+
+#code_backdrop {
+	position: absolute;
+	width: 100%;
+	z-index: 1;
+	box-sizing: border-box;
+	width: inherit;
+	height: inherit;
+	margin: 0;
+	resize: none;
+	border: transparent inset 3px;
+	overflow-x: auto;
+	overflow-y: auto;
+}
+
+#code_highlight {
+	margin: 0;
+	white-space: pre;
+	word-wrap: break-word;
+}
+
+#code_highlight > mark {
+	display: block;
+	width: inherit;
+}

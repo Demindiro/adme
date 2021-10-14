@@ -1,3 +1,7 @@
+mod source_map;
+
+pub use source_map::SourceMap;
+
 use crate::util::as_u8_mut;
 use crate::interpreter::{Op, Function};
 use std::collections::HashMap;
@@ -21,6 +25,8 @@ pub struct Assembler<'a, 'b> {
 	pending_labels: HashMap<&'a str, Vec<PendingLabel>>,
 	memory: &'b mut [u32],
 	ip: u32,
+	source_map: SourceMap,
+	last_line: u32,
 }
 
 impl<'a, 'b> Assembler<'a, 'b> {
@@ -31,6 +37,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	}
 
 	fn push_word(&mut self, word: u32) {
+		self.source_map.insert(self.ip, self.last_line);
 		self.memory[usize::try_from(self.ip / 4).unwrap()] = word;
 		self.ip = self.ip.wrapping_add(4);
 	}
@@ -265,15 +272,19 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		zero_terminate.then(|| self.push_byte(0));
 	}
 
-	pub fn assemble(source: &'a str, destination: &'b mut [u32]) {
+	pub fn assemble(source: &'a str, destination: &'b mut [u32]) -> SourceMap {
 		let mut slf = Self {
 			known_labels: HashMap::default(),
 			pending_labels: HashMap::default(),
 			memory: destination,
 			ip: 0,
+			source_map: SourceMap::new(),
+			last_line: 0,
 		};
 
-		for line in source.lines() {
+		for (i, line) in source.lines().enumerate() {
+			slf.last_line = i as u32;
+
 			// Remove any comments
 			let line = line.split(';').next().unwrap();
 			let line = line.split('#').next().unwrap();
@@ -306,5 +317,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 				todo!("handle invalid line");
 			}
 		}
+
+		slf.source_map
 	}
 }

@@ -4,24 +4,29 @@
 		<meta charset="utf-8">
 		<script src="./global.js"></script>
 		<script type="module" src="./index.js"></script>
+		<link href="style.css" rel="stylesheet"></link>
 	</head>
 	<body>
-		<button onclick="step()">Step</button>
-		<button onclick="run(this)">Run</button>
-		<input type="range" min="0" max="20" value="3" oninput="set_run_hz(this)">
-		<span id="cpu_hz"></span>
-		<span id="error" style="color:red"></span>
-		<pre id="serial"></pre>
-		<pre>
-			<table id="cpu_stats">
-				<tr>
-					<th>Steps</th>
-					<td id="cpu_steps"></td>
-				</tr>
-			</table>
-		</pre>
-		<pre id="memory"></pre>
-		<textarea id="code" placeholder="Enter assembly here..." style="width:300px;height:500px">
+		<div class="section left">
+			<div>
+				<button onclick="step()">Step</button>
+				<button onclick="run(this)">Run</button>
+				<button onclick="assemble()">Assemble</button>
+			</div>
+			<div>
+				<input type="range" min="0" max="20" value="3" oninput="set_run_hz(this)">
+				<span id="cpu_hz"></span>
+			</div>
+			<div>
+				<p id="error" style="color:red"></p>
+				<pre id="serial"></pre>
+			</div>
+			<div id="code">
+				<div id="code_backdrop">
+					<pre id="code_highlight">
+					<mark> </mark></pre>
+				</div>
+				<textarea id="code_input" placeholder="Enter assembly here...">
 	li		$1, hello_str
 	li		$gp, 8192
 
@@ -42,6 +47,18 @@ idle:
 hello_str:
 	.asciz	"Hello, world!"
 </textarea>
-		<button onclick="assemble()">Assemble</button>
+			</div>
+		</div>
+		<div class="section right">
+			<pre id="cpu_registers">
+				<table id="cpu_stats">
+					<tr>
+						<th>Steps</th>
+						<td id="cpu_steps"></td>
+					</tr>
+				</table>
+			</pre>
+			<pre id="memory"></pre>
+		</div>
 	</body>
 </html>
