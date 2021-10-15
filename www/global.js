@@ -20,12 +20,26 @@ let memory;
 let run_interval;
 let run_hz = 8;
 
+let mark_registers = []
+mark_registers.length = 32;
+
 // setInterval delay cannot be arbitrarily low - assume 64 Hz is reasonable.
 // We're also using powers of 2 for herts, so dividing by this value makes things easy.
 const MIN_HZ = 64;
 
 const MEM_WIDTH = 64;
 const MEM_HEIGHT = 32;
+
+// Colors that are acceptable for highlighting things
+const MARK_COLORS = ['red', 'cyan', 'lightgreen', 'lightcoral', 'lightpink', 'orange'];
+
+function randint(min, max) {
+	return Math.floor(Math.random() * (max - min) + min);
+}
+
+function random_mark_color() {
+	return MARK_COLORS[randint(0, MARK_COLORS.length)];
+}
 
 function hex(n, pad) {
 	return n.toString(16).padStart(pad, '0');
@@ -93,7 +107,11 @@ function update_stats() {
 	cpu_ip.innerHTML = '0x' + hex(cpu.ip, 8);
 
 	for (let i = 1; i < 32; i++) {
-		cpu_gp[i].innerHTML = '0x' + hex(cpu.gp(i), 8);
+		let v = '0x' + hex(cpu.gp(i), 8);
+		if (mark_registers[i]) {
+			v = '<mark style="background-color:' + mark_registers[i] + '">' + v + '</mark>';
+		}
+		cpu_gp[i].innerHTML = v;
 	}
 	cpu_hi.innerHTML = '0x' + hex(cpu.hi, 8);
 	cpu_lo.innerHTML = '0x' + hex(cpu.lo, 8);
@@ -107,10 +125,38 @@ function update_stats() {
 	}
 	t += '</b>\n';
 
+	let need_mark = (addr_from, addr_to) => {
+		for (let i = 1; i < 32; i++) {
+			let c = mark_registers[i];
+			if (c) {
+				let v = cpu.gp(i);
+				if (addr_from <= v && v < addr_to) {
+					return [v, c];
+				}
+			}
+		}
+	};
+
 	let n = '<b>0000</b>';
 	for (let i = 0; i < MEM_HEIGHT * MEM_WIDTH; i += D) {
-		let v = hex(mem.get_u32(i), 2 * D);
-		if (i == cpu.ip) {
+		let mark = need_mark(i, i + D);
+		let v;
+		if (mark !== undefined) {
+			v = '';
+			for (let k = D - 1; k >= 0; k--) {
+				let h = hex(mem.get_u8(i + k), 2);
+				console.log('yaya');
+				if (i + k === mark[0]) {
+					console.log('ok');
+					v += '<mark style="background-color:' + mark[1] + '">' + h + '</mark>';
+				} else {
+					v += h;
+				}
+			}
+		} else {
+			v = hex(mem.get_u32(i), 2 * D);
+		}
+		if (i === cpu.ip) {
 			v = '<mark>' + v + '</mark>';
 		}
 		n = v + ' ' + n;
@@ -147,9 +193,16 @@ function init_html() {
 		for (let k = i; k < i + 2; k++) {
 			let th = document.createElement('th');
 			let td = document.createElement('td');
+			console.log(td);
 			if (k > 0) {
 				th.innerHTML = '$' + k;
 				cpu_gp.push(td);
+				let index = i + k;
+				td.onclick = () => {
+					mark_registers[k] = mark_registers[k] ? undefined : random_mark_color();
+					update_stats();
+				};
+				td.classList.add('cpu_register');
 			} else {
 				th.innerHTML = 'IP';
 				cpu_ip = td;
