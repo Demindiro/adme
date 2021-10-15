@@ -109,7 +109,11 @@ function update_stats() {
 
 	let n = '<b>0000</b>';
 	for (let i = 0; i < MEM_HEIGHT * MEM_WIDTH; i += D) {
-		n = hex(mem.get_u32(i), 2 * D) + ' ' + n;
+		let v = hex(mem.get_u32(i), 2 * D);
+		if (i == cpu.ip) {
+			v = '<mark>' + v + '</mark>';
+		}
+		n = v + ' ' + n;
 		if (i % MEM_WIDTH === MEM_WIDTH - D) {
 			t += n + '\n';
 			n = '<b>' + hex(i + D, 4) + '</b>';
