@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use crate::*;
+use wasm_bindgen::prelude::*;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -7,7 +7,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[wasm_bindgen]
 extern "C" {
 	#[wasm_bindgen]
-    fn serial_out(value: u8);
+	fn serial_out(value: u8);
 
 	#[wasm_bindgen]
 	fn error(err: &str);
@@ -22,9 +22,7 @@ pub struct Mem {
 impl Mem {
 	#[wasm_bindgen(constructor)]
 	pub fn new() -> Mem {
-		Self {
-			mem: [0; 1024],
-		}
+		Self { mem: [0; 1024] }
 	}
 
 	#[wasm_bindgen]
@@ -69,12 +67,18 @@ impl Memory for Mem {
 
 	fn load_u32(&mut self, addr: u32) -> Result<u32, LoadError> {
 		let addr = usize::try_from(addr).unwrap();
-		self.mem.get(addr / 4).copied().ok_or(LoadError::OutOfBounds)
+		self.mem
+			.get(addr / 4)
+			.copied()
+			.ok_or(LoadError::OutOfBounds)
 	}
 
 	fn store_u32(&mut self, addr: u32, value: u32) -> Result<(), StoreError> {
 		let addr = usize::try_from(addr).unwrap();
-		self.mem.get_mut(addr / 4).map(|v| *v = value).ok_or(StoreError::OutOfBounds)
+		self.mem
+			.get_mut(addr / 4)
+			.map(|v| *v = value)
+			.ok_or(StoreError::OutOfBounds)
 	}
 }
 

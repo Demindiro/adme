@@ -4,7 +4,6 @@ use std::io;
 use std::process;
 
 fn main() {
-
 	let mut args = env::args();
 	args.next(); // bin_name
 	let asm_file = args.next().unwrap_or_else(|| err_usage());
@@ -27,9 +26,7 @@ fn main() {
 
 	impl Mem {
 		fn as_u8(mem: &mut [u32]) -> &mut [u8] {
-			unsafe {
-				core::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u8>(), mem.len() * 4)
-			}
+			unsafe { core::slice::from_raw_parts_mut(mem.as_mut_ptr().cast::<u8>(), mem.len() * 4) }
 		}
 
 		fn as_u16(mem: &mut [u32]) -> &mut [u16] {
@@ -78,9 +75,7 @@ fn main() {
 		}
 	}
 
-	let mut mem = Mem {
-		mem: [0; 1024],
-	};
+	let mut mem = Mem { mem: [0; 1024] };
 
 	adme::Assembler::assemble(&asm, &mut mem.mem);
 

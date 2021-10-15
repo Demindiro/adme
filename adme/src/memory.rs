@@ -4,11 +4,11 @@ pub trait Memory {
 	fn store_u8(&mut self, address: u32, value: u8) -> Result<(), StoreError>;
 
 	fn load_u16(&mut self, address: u32) -> Result<u16, LoadError>;
-	
+
 	fn store_u16(&mut self, address: u32, value: u16) -> Result<(), StoreError>;
 
 	fn load_u32(&mut self, address: u32) -> Result<u32, LoadError>;
-	
+
 	fn store_u32(&mut self, address: u32, value: u32) -> Result<(), StoreError>;
 }
 

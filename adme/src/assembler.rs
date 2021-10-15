@@ -2,10 +2,10 @@ mod source_map;
 
 pub use source_map::SourceMap;
 
+use crate::interpreter::{Function, Op};
 use crate::util::as_u8_mut;
-use crate::interpreter::{Op, Function};
-use std::collections::HashMap;
 use core::ops::Range;
+use std::collections::HashMap;
 
 struct PendingLabel {
 	right_shift: u8,
@@ -58,10 +58,24 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_word((op as u32) << 26 | s << 21 | t << 16 | imm)
 	}
 
-	fn push_i_label(&mut self, op: Op, s: u32, t: u32, label: &'a str, bits: Range<u8>, offset: i8, relative: bool) {
+	fn push_i_label(
+		&mut self,
+		op: Op,
+		s: u32,
+		t: u32,
+		label: &'a str,
+		bits: Range<u8>,
+		offset: i8,
+		relative: bool,
+	) {
 		self.align_ip();
 		self.push_word((op as u32) << 26 | s << 21 | t << 16);
-		self.resolve_label(label, bits, offset, u8::from(relative) * PendingLabel::RELATIVE);
+		self.resolve_label(
+			label,
+			bits,
+			offset,
+			u8::from(relative) * PendingLabel::RELATIVE,
+		);
 	}
 
 	fn push_j(&mut self, op: Op, imm: u32) {
@@ -72,7 +86,12 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	fn push_j_label(&mut self, op: Op, label: &'a str, bits: Range<u8>, relative: bool) {
 		self.align_ip();
 		self.push_word((op as u32) << 26);
-		self.resolve_label(label, bits, 0, PendingLabel::MUST_FIT | u8::from(relative) * PendingLabel::RELATIVE);
+		self.resolve_label(
+			label,
+			bits,
+			0,
+			PendingLabel::MUST_FIT | u8::from(relative) * PendingLabel::RELATIVE,
+		);
 	}
 
 	fn resolve_label(&mut self, label: &'a str, bits: Range<u8>, offset: i8, flags: u8) {
@@ -206,11 +225,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			a.next().unwrap().trim_start(),
 		];
 		let (reg, offt) = Self::decode_reg_offset(s[1]);
-		[
-			Self::translate_register(s[0]).unwrap().into(),
-			reg,
-			offt,
-		]
+		[Self::translate_register(s[0]).unwrap().into(), reg, offt]
 	}
 
 	fn decode_1_reg_1_imm(args: &str) -> (u32, &str) {
@@ -219,17 +234,16 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			a.next().unwrap().trim_start(),
 			a.next().unwrap().trim_start(),
 		];
-		(
-			Self::translate_register(s[0]).unwrap().into(),
-			s[1],
-		)
+		(Self::translate_register(s[0]).unwrap().into(), s[1])
 	}
 
 	fn decode_reg_offset(arg: &str) -> (u32, u32) {
 		let (offset, reg) = arg.split_once('(').unwrap();
 		assert_eq!(reg.chars().last(), Some(')'));
 		(
-			Self::translate_register(&reg[..reg.len() - 1]).unwrap().into(),
+			Self::translate_register(&reg[..reg.len() - 1])
+				.unwrap()
+				.into(),
 			offset.parse().unwrap(),
 		)
 	}
@@ -315,12 +329,15 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			self.push_i(Op::Ori, t, t, imm & 0xffff);
 		} else {
 			self.push_i_label(Op::Lui, 0, t, imm, 16..32, 0, false);
-			self.push_i_label(Op::Ori, t, t, imm,  0..16, 0, false);
+			self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false);
 		}
 	}
 
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) {
-		snailquote::unescape(args).unwrap().bytes().for_each(|b| self.push_byte(b));
+		snailquote::unescape(args)
+			.unwrap()
+			.bytes()
+			.for_each(|b| self.push_byte(b));
 		zero_terminate.then(|| self.push_byte(0));
 	}
 
