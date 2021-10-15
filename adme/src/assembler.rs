@@ -244,7 +244,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			Self::translate_register(&reg[..reg.len() - 1])
 				.unwrap()
 				.into(),
-			offset.parse().unwrap(),
+			parse_int::parse(offset).unwrap(),
 		)
 	}
 
@@ -260,7 +260,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_shift(&mut self, function: Function, args: &str) {
 		let (d, t, imm) = Self::decode_2_regs_1_imm(args);
-		self.push_r(imm.parse().unwrap(), t, d, 0, function)
+		self.push_r(parse_int::parse(imm).unwrap(), t, d, 0, function)
 	}
 
 	fn parse_shiftv(&mut self, function: Function, args: &str) {
@@ -270,7 +270,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_arithlogi(&mut self, op: Op, args: &str) {
 		let (t, s, imm) = Self::decode_2_regs_1_imm(args);
-		let imm = imm.parse().unwrap();
+		let imm = parse_int::parse(imm).unwrap();
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, s, t, imm)
 	}
@@ -293,7 +293,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_loadi(&mut self, op: Op, args: &str) {
 		let (t, imm) = Self::decode_1_reg_1_imm(args);
-		let imm = imm.parse().unwrap();
+		let imm = parse_int::parse(imm).unwrap();
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, 0, t, imm)
 	}
@@ -309,7 +309,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	}
 
 	fn parse_j(&mut self, op: Op, args: &str) {
-		let offset = args.trim().parse().unwrap();
+		let offset = parse_int::parse(args.trim()).unwrap();
 		assert!(offset <= 1 << 26);
 		self.push_j(op, offset)
 	}
@@ -324,7 +324,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_pseudo_li(&mut self, args: &'a str) {
 		let (t, imm) = Self::decode_1_reg_1_imm(args);
-		if let Ok(imm) = imm.parse::<u32>() {
+		if let Ok(imm) = parse_int::parse::<u32>(imm) {
 			self.push_i(Op::Lui, 0, t, imm >> 16);
 			self.push_i(Op::Ori, t, t, imm & 0xffff);
 		} else {

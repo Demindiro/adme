@@ -11,6 +11,7 @@ edition = "2021"
 wasm-bindgen = { version = "0.2", optional = true }
 wee_alloc = { version = "0.4", optional = true }
 snailquote = "0.3"
+parse_int = "0.6"
 
 [features]
 default = ["wasm"]

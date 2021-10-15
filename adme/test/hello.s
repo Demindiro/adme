@@ -1,5 +1,5 @@
 	li		$t0, hello_str
-	li		$t1, 8192
+	li		$t1, 0x2000
 
 loop:
 	lbu		$t2, 0($t0)
