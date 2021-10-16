@@ -192,9 +192,11 @@ function assemble() {
 function init_html() {
 	let stats = document.getElementById('cpu_stats');
 
-	for (let i = 0; i < 32; i += 2) {
+	const DR = 4;
+
+	for (let i = 0; i < 32; i += DR) {
 		let tr = document.createElement('tr');
-		for (let k = i; k < i + 2; k++) {
+		for (let k = i; k < i + DR; k++) {
 			let th = document.createElement('th');
 			let td = document.createElement('td');
 			console.log(td);
