@@ -39,6 +39,7 @@ body {
 	display: flex;
 	flex-direction: row-reverse;
 	min-height: 0;
+	margin-top: auto;
 }
 
 #memory {
