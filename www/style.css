@@ -26,6 +26,10 @@ body {
 	min-width: 300px;
 }
 
+.section.right {
+	flex: 2 1;
+}
+
 #cpu_registers {
 	display: flex;
 	flex-direction: row-reverse;
@@ -41,6 +45,8 @@ body {
 	min-height: 0;
 	min-width: 0;
 	overflow: auto;
+	flex: 1;
+	text-align: right;
 }
 
 #code {
