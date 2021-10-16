@@ -156,7 +156,7 @@ function update_stats() {
 
 	let t = '     <b>'
 	for (let i = MEM_WIDTH - D; i >= 0; i -= D) {
-		t += ' ' + hex(i, 2) + '      ';
+		t += '  ' + hex(i, 2) + '     ';
 	}
 	t += '</b>\n';
 
