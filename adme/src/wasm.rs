@@ -83,6 +83,6 @@ impl Memory for Mem {
 }
 
 #[wasm_bindgen]
-pub fn assemble(source: &str, memory: &mut Mem) -> SourceMap {
-	Assembler::assemble(source, &mut memory.mem)
+pub fn assemble(source: &str, memory: &mut Mem) -> Result<SourceMap, JsValue> {
+	Assembler::assemble(source, &mut memory.mem).map_err(|e| format!("{:?}", e).into())
 }

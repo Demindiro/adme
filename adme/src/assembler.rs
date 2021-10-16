@@ -7,6 +7,8 @@ use crate::util::as_u8_mut;
 use core::ops::Range;
 use std::collections::HashMap;
 
+type Result<'a, T = ()> = core::result::Result<T, AssembleError<'a>>;
+
 struct PendingLabel {
 	right_shift: u8,
 	bits: u8,
@@ -30,30 +32,36 @@ pub struct Assembler<'a, 'b> {
 }
 
 impl<'a, 'b> Assembler<'a, 'b> {
-	fn push_byte(&mut self, byte: u8) {
+	fn push_byte(&mut self, byte: u8) -> Result<'a> {
 		let mem = as_u8_mut(self.memory);
-		mem[usize::try_from(self.ip).unwrap()] = byte;
+		*mem.get_mut(usize::try_from(self.ip).unwrap())
+			.ok_or(AssembleError::OutOfMemory)? = byte;
 		self.ip = self.ip.wrapping_add(1);
+		Ok(())
 	}
 
-	fn push_word(&mut self, word: u32) {
+	fn push_word(&mut self, word: u32) -> Result<'a> {
 		self.source_map.insert(self.ip, self.last_line);
-		self.memory[usize::try_from(self.ip / 4).unwrap()] = word;
+		*self
+			.memory
+			.get_mut(usize::try_from(self.ip / 4).unwrap())
+			.ok_or(AssembleError::OutOfMemory)? = word;
 		self.ip = self.ip.wrapping_add(4);
+		Ok(())
 	}
 
 	fn align_ip(&mut self) {
 		self.ip = self.ip.wrapping_add(3) & !0x3;
 	}
 
-	fn push_r(&mut self, s: u32, t: u32, d: u32, sa: u32, function: Function) {
+	fn push_r(&mut self, s: u32, t: u32, d: u32, sa: u32, function: Function) -> Result<'a> {
 		self.align_ip();
 		// op is always 0
 		let i = s << 21 | t << 16 | d << 11 | sa << 6 | function as u32;
-		self.push_word(i);
+		self.push_word(i)
 	}
 
-	fn push_i(&mut self, op: Op, s: u32, t: u32, imm: u32) {
+	fn push_i(&mut self, op: Op, s: u32, t: u32, imm: u32) -> Result<'a> {
 		self.align_ip();
 		self.push_word((op as u32) << 26 | s << 21 | t << 16 | imm)
 	}
@@ -67,31 +75,39 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		bits: Range<u8>,
 		offset: i8,
 		relative: bool,
-	) {
+	) -> Result<'a> {
 		self.align_ip();
-		self.push_word((op as u32) << 26 | s << 21 | t << 16);
+		self.push_word((op as u32) << 26 | s << 21 | t << 16)?;
 		self.resolve_label(
 			label,
 			bits,
 			offset,
 			u8::from(relative) * PendingLabel::RELATIVE,
 		);
+		Ok(())
 	}
 
-	fn push_j(&mut self, op: Op, imm: u32) {
+	fn push_j(&mut self, op: Op, imm: u32) -> Result<'a> {
 		self.align_ip();
-		self.push_word((op as u32) << 26 | imm);
+		self.push_word((op as u32) << 26 | imm)
 	}
 
-	fn push_j_label(&mut self, op: Op, label: &'a str, bits: Range<u8>, relative: bool) {
+	fn push_j_label(
+		&mut self,
+		op: Op,
+		label: &'a str,
+		bits: Range<u8>,
+		relative: bool,
+	) -> Result<'a> {
 		self.align_ip();
-		self.push_word((op as u32) << 26);
+		self.push_word((op as u32) << 26)?;
 		self.resolve_label(
 			label,
 			bits,
 			0,
 			PendingLabel::MUST_FIT | u8::from(relative) * PendingLabel::RELATIVE,
 		);
+		Ok(())
 	}
 
 	fn resolve_label(&mut self, label: &'a str, bits: Range<u8>, offset: i8, flags: u8) {
@@ -128,14 +144,15 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.memory[usize::try_from(pending.location / 4).unwrap()] |= value;
 	}
 
-	fn translate_register(reg: &str) -> Option<u8> {
+	fn translate_register(reg: &str) -> Result<u32> {
+		let reg = reg.trim();
 		if reg.bytes().next() != Some(b'$') {
-			return None;
+			return Err(AssembleError::ExpectedRegister);
 		}
 		// Stupid? Yes.
 		// Easiest? Also yes.
 		// I bet it's the fastest too ;)
-		Some(match &reg.as_bytes()[1..] {
+		Ok(match &reg.as_bytes()[1..] {
 			b"zero" | b"0" => 0,
 			b"at" | b"1" => 1,
 			b"v0" | b"2" => 2,
@@ -168,180 +185,181 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			b"sp" | b"29" => 29,
 			b"s8" | b"30" => 30,
 			b"ra" | b"31" => 31,
-			_ => return None,
+			_ => return Err(AssembleError::ExpectedRegister),
 		})
 	}
 
-	fn decode_3_regs(args: &str) -> [u32; 3] {
+	fn ensure_no_args<R>(mut args: impl Iterator<Item = &'a str>, ret: R) -> Result<'a, R> {
+		args.next()
+			.is_none()
+			.then(|| ret)
+			.ok_or(AssembleError::UnexpectedArgument)
+	}
+
+	fn decode_3_regs(args: &'a str) -> Result<'a, [u32; 3]> {
 		let mut a = args.split(',');
-		let s = [
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
+		let ok = [
+			Self::translate_register(a.next().unwrap_or(""))?,
+			Self::translate_register(a.next().unwrap_or(""))?,
+			Self::translate_register(a.next().unwrap_or(""))?,
 		];
-		[
-			Self::translate_register(s[0]).unwrap().into(),
-			Self::translate_register(s[1]).unwrap().into(),
-			Self::translate_register(s[2]).unwrap().into(),
-		]
+		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_2_regs(args: &str) -> [u32; 2] {
+	fn decode_2_regs(args: &'a str) -> Result<'a, [u32; 2]> {
 		let mut a = args.split(',');
-		let s = [
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
+		let ok = [
+			Self::translate_register(a.next().unwrap_or(""))?,
+			Self::translate_register(a.next().unwrap_or(""))?,
 		];
-		[
-			Self::translate_register(s[0]).unwrap().into(),
-			Self::translate_register(s[1]).unwrap().into(),
-		]
+		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_1_reg(args: &str) -> u32 {
+	fn decode_1_reg(args: &'a str) -> Result<'a, u32> {
 		let mut a = args.split(',');
-		let s = a.next().unwrap().trim_start();
-		Self::translate_register(s).unwrap().into()
+		let ok = Self::translate_register(a.next().unwrap_or(""))?;
+		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_2_regs_1_imm(args: &str) -> (u32, u32, &str) {
+	fn decode_2_regs_1_imm(args: &'a str) -> Result<'a, (u32, u32, &'a str)> {
 		let mut a = args.split(',');
-		let s = [
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
-		];
-		(
-			Self::translate_register(s[0]).unwrap().into(),
-			Self::translate_register(s[1]).unwrap().into(),
-			s[2],
-		)
+		let ok = (
+			Self::translate_register(a.next().unwrap_or(""))?,
+			Self::translate_register(a.next().unwrap_or(""))?,
+			a.next()
+				.ok_or(AssembleError::ExpectedImmediate)?
+				.trim_start(),
+		);
+		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_2_regs_1_offset(args: &str) -> [u32; 3] {
+	fn decode_2_regs_1_offset(args: &'a str) -> Result<'a, [u32; 3]> {
 		let mut a = args.split(',');
-		let s = [
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
-		];
-		let (reg, offt) = Self::decode_reg_offset(s[1]);
-		[Self::translate_register(s[0]).unwrap().into(), reg, offt]
+		let d = Self::translate_register(a.next().unwrap_or(""))?;
+		let (reg, offt) = Self::decode_reg_offset(a.next().unwrap_or(""))?;
+		Self::ensure_no_args(a, [d, reg, offt])
 	}
 
-	fn decode_1_reg_1_imm(args: &str) -> (u32, &str) {
+	fn decode_1_reg_1_imm(args: &'a str) -> Result<'a, (u32, &'a str)> {
 		let mut a = args.split(',');
-		let s = [
-			a.next().unwrap().trim_start(),
-			a.next().unwrap().trim_start(),
-		];
-		(Self::translate_register(s[0]).unwrap().into(), s[1])
+		let ok = (
+			Self::translate_register(a.next().unwrap_or(""))?,
+			a.next()
+				.ok_or(AssembleError::ExpectedImmediate)?
+				.trim_start(),
+		);
+		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_reg_offset(arg: &str) -> (u32, u32) {
-		let (offset, reg) = arg.split_once('(').unwrap();
+	fn decode_reg_offset(arg: &'a str) -> Result<'a, (u32, u32)> {
+		let (offset, reg) = arg.split_once('(').ok_or(AssembleError::ExpectedOffset)?;
 		assert_eq!(reg.chars().last(), Some(')'));
-		(
-			Self::translate_register(&reg[..reg.len() - 1])
-				.unwrap()
-				.into(),
-			parse_int::parse(offset).unwrap(),
-		)
+		Ok((
+			Self::translate_register(&reg[..reg.len() - 1])?,
+			parse_int::parse(offset).map_err(|_| AssembleError::ExpectedImmediate)?,
+		))
 	}
 
-	fn parse_arithlog(&mut self, function: Function, args: &str) {
-		let [d, t, s] = Self::decode_3_regs(args);
+	fn parse_arithlog(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let [d, t, s] = Self::decode_3_regs(args)?;
 		self.push_r(s, t, d, 0, function)
 	}
 
-	fn parse_divmult(&mut self, function: Function, args: &str) {
-		let [s, t] = Self::decode_2_regs(args);
+	fn parse_divmult(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let [s, t] = Self::decode_2_regs(args)?;
 		self.push_r(s, t, 0, 0, function)
 	}
 
-	fn parse_shift(&mut self, function: Function, args: &str) {
-		let (d, t, imm) = Self::decode_2_regs_1_imm(args);
-		self.push_r(parse_int::parse(imm).unwrap(), t, d, 0, function)
+	fn parse_shift(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let (d, t, imm) = Self::decode_2_regs_1_imm(args)?;
+		let imm = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
+		self.push_r(imm, t, d, 0, function)
 	}
 
-	fn parse_shiftv(&mut self, function: Function, args: &str) {
-		let [d, t, s] = Self::decode_3_regs(args);
+	fn parse_shiftv(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let [d, t, s] = Self::decode_3_regs(args)?;
 		self.push_r(s, t, d, 0, function)
 	}
 
-	fn parse_arithlogi(&mut self, op: Op, args: &str) {
-		let (t, s, imm) = Self::decode_2_regs_1_imm(args);
-		let imm = parse_int::parse(imm).unwrap();
+	fn parse_arithlogi(&mut self, op: Op, args: &'a str) -> Result<'a> {
+		let (t, s, imm) = Self::decode_2_regs_1_imm(args)?;
+		let imm = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, s, t, imm)
 	}
 
-	fn parse_branch(&mut self, op: Op, args: &'a str) {
-		let (t, s, imm) = Self::decode_2_regs_1_imm(args);
+	fn parse_branch(&mut self, op: Op, args: &'a str) -> Result<'a> {
+		let (t, s, imm) = Self::decode_2_regs_1_imm(args)?;
 		self.push_i_label(op, s, t, imm, 2..18, -1, true)
 	}
 
-	fn parse_branchz(&mut self, op: Op, args: &'a str) {
-		let (s, imm) = Self::decode_1_reg_1_imm(args);
+	fn parse_branchz(&mut self, op: Op, args: &'a str) -> Result<'a> {
+		let (s, imm) = Self::decode_1_reg_1_imm(args)?;
 		self.push_i_label(op, s, 0, imm, 2..18, -1, true)
 	}
 
-	fn parse_loadstore(&mut self, op: Op, args: &str) {
-		let [t, s, offset] = Self::decode_2_regs_1_offset(args);
+	fn parse_loadstore(&mut self, op: Op, args: &'a str) -> Result<'a> {
+		let [t, s, offset] = Self::decode_2_regs_1_offset(args)?;
 		assert!(offset <= u32::from(u16::MAX));
 		self.push_i(op, s, t, offset)
 	}
 
-	fn parse_loadi(&mut self, op: Op, args: &str) {
-		let (t, imm) = Self::decode_1_reg_1_imm(args);
-		let imm = parse_int::parse(imm).unwrap();
+	fn parse_loadi(&mut self, op: Op, args: &'a str) -> Result<'a> {
+		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
+		let imm = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
 		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, 0, t, imm)
 	}
 
-	fn parse_movefrom(&mut self, function: Function, args: &str) {
-		let d = Self::decode_1_reg(args);
-		self.push_r(0, 0, d, 0, function);
+	fn parse_movefrom(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let d = Self::decode_1_reg(args)?;
+		self.push_r(0, 0, d, 0, function)
 	}
 
-	fn parse_moveto(&mut self, function: Function, args: &str) {
-		let s = Self::decode_1_reg(args);
-		self.push_r(s, 0, 0, 0, function);
+	fn parse_moveto(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let s = Self::decode_1_reg(args)?;
+		self.push_r(s, 0, 0, 0, function)
 	}
 
-	fn parse_j(&mut self, op: Op, args: &str) {
-		let offset = parse_int::parse(args.trim()).unwrap();
+	fn parse_j(&mut self, op: Op, args: &str) -> Result<'a> {
+		let offset = parse_int::parse(args.trim()).map_err(|_| AssembleError::ExpectedImmediate)?;
 		assert!(offset <= 1 << 26);
 		self.push_j(op, offset)
 	}
 
-	fn parse_j_label(&mut self, op: Op, args: &'a str) {
+	fn parse_j_label(&mut self, op: Op, args: &'a str) -> Result<'a> {
 		self.push_j_label(op, args.trim(), 0..26, false)
 	}
 
-	fn parse_jump(&mut self, op: Op, args: &'a str) {
+	fn parse_jump(&mut self, op: Op, args: &'a str) -> Result<'a> {
 		self.push_j_label(op, args.trim(), 2..28, true)
 	}
 
-	fn parse_pseudo_li(&mut self, args: &'a str) {
-		let (t, imm) = Self::decode_1_reg_1_imm(args);
+	fn parse_pseudo_li(&mut self, args: &'a str) -> Result<'a> {
+		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
 		if let Ok(imm) = parse_int::parse::<u32>(imm) {
-			self.push_i(Op::Lui, 0, t, imm >> 16);
-			self.push_i(Op::Ori, t, t, imm & 0xffff);
+			self.push_i(Op::Lui, 0, t, imm >> 16)?;
+			self.push_i(Op::Ori, t, t, imm & 0xffff)
 		} else {
-			self.push_i_label(Op::Lui, 0, t, imm, 16..32, 0, false);
-			self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false);
+			self.push_i_label(Op::Lui, 0, t, imm, 16..32, 0, false)?;
+			self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false)
 		}
 	}
 
-	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) {
-		snailquote::unescape(args)
-			.unwrap()
+	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) -> Result<'a> {
+		for b in snailquote::unescape(args)
+			.map_err(|_| AssembleError::InvalidString)?
 			.bytes()
-			.for_each(|b| self.push_byte(b));
-		zero_terminate.then(|| self.push_byte(0));
+		{
+			self.push_byte(b)?;
+		}
+		if zero_terminate {
+			self.push_byte(0)?;
+		}
+		Ok(())
 	}
 
-	pub fn assemble(source: &'a str, destination: &'b mut [u32]) -> SourceMap {
+	pub fn assemble(source: &'a str, destination: &'b mut [u32]) -> Result<'a, SourceMap> {
 		let mut slf = Self {
 			known_labels: HashMap::default(),
 			pending_labels: HashMap::default(),
@@ -414,16 +432,28 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"mtlo" => slf.parse_moveto(Function::Mtlo, args),
 					".ascii" => slf.parse_ascii(args, false),
 					".asciz" => slf.parse_ascii(args, true),
-					op => todo!("{}", op),
-				};
+					mnem => Err(AssembleError::UnknownOp(mnem)),
+				}?;
 			} else if line.chars().last() == Some(':') {
 				let l = core::str::from_utf8(&line.as_bytes()[..line.len() - 1]).unwrap();
 				slf.insert_label(l);
 			} else if !line.is_empty() {
-				todo!("handle invalid line");
+				return Err(AssembleError::InvalidLine(line));
 			}
 		}
 
-		slf.source_map
+		Ok(slf.source_map)
 	}
+}
+
+#[derive(Debug)]
+pub enum AssembleError<'a> {
+	UnknownOp(&'a str),
+	InvalidLine(&'a str),
+	OutOfMemory,
+	ExpectedRegister,
+	ExpectedImmediate,
+	ExpectedOffset,
+	InvalidString,
+	UnexpectedArgument,
 }

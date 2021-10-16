@@ -77,7 +77,7 @@ fn main() {
 
 	let mut mem = Mem { mem: [0; 1024] };
 
-	adme::Assembler::assemble(&asm, &mut mem.mem);
+	adme::Assembler::assemble(&asm, &mut mem.mem).unwrap();
 
 	for _ in 0..85 {
 		cpu.step(&mut mem).unwrap();

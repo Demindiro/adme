@@ -177,12 +177,16 @@ function update_stats() {
 }
 
 function assemble() {
-	source_map = assemble_asm(asm_input.value, mem);
-	console.log(source_map);
-	cpu = new_cpu();
-	update_stats();
-	serial_clear();
-	error('');
+	try {
+		source_map = assemble_asm(asm_input.value, mem);
+		console.log(source_map);
+		cpu = new_cpu();
+		update_stats();
+		serial_clear();
+		error('');
+	} catch (e) {
+		error(e);
+	}
 }
 
 function init_html() {
