@@ -30,15 +30,50 @@ const MIN_HZ = 64;
 const MEM_WIDTH = 64;
 const MEM_HEIGHT = 32;
 
-// Colors that are acceptable for highlighting things
-const MARK_COLORS = ['red', 'cyan', 'lightgreen', 'lightcoral', 'lightpink', 'orange'];
+let free_register_colors = [
+	'default',
+	'default',
+	'default',
+	'default',
+	'default',
+	'default',
+	'default',
+	'red',
+	'#8af',
+	'#f60',
+	'#0af',
+	'palegoldenrod',
+	'peru',
+	'powderblue',
+	'turquoise',
+	'yellowgreen',
+	'navajowhite',
+	'lightseagreen',
+	'lightskyblue',
+	'thistle',
+	'springgreen',
+	'violet',
+	'silver',
+	'deeppink',
+	'#af4',
+	'orange',
+	'lightpink',
+	'gold',
+	'lightcoral',
+	'lightgreen',
+	'cyan',
+];
 
 function randint(min, max) {
 	return Math.floor(Math.random() * (max - min) + min);
 }
 
-function random_mark_color() {
-	return MARK_COLORS[randint(0, MARK_COLORS.length)];
+function pop_mark_color() {
+	return free_register_colors.pop();
+}
+
+function push_mark_color(c) {
+	free_register_colors.push(c);
 }
 
 function hex(n, pad) {
@@ -205,7 +240,12 @@ function init_html() {
 				cpu_gp.push(td);
 				let index = i + k;
 				td.onclick = () => {
-					mark_registers[k] = mark_registers[k] ? undefined : random_mark_color();
+					if (mark_registers[k]) {
+						push_mark_color(mark_registers[k]);
+						mark_registers[k] = undefined;
+					} else {
+						mark_registers[k] = pop_mark_color();
+					}
 					update_stats();
 				};
 				td.classList.add('cpu_register');
