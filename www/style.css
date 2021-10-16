@@ -28,6 +28,11 @@ body {
 	flex-direction: row-reverse;
 }
 
+#memory {
+	margin-top: auto;
+	margin-left: auto;
+}
+
 #code {
 	display: grid;
 	width: 100%;
