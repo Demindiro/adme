@@ -1,4 +1,4 @@
-	li		$t0, hello_str
+	la		$t0, hello_str
 	li		$t1, 0x2000
 
 loop:

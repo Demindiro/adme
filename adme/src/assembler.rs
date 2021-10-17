@@ -337,13 +337,15 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_pseudo_li(&mut self, args: &'a str) -> Result<'a> {
 		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
-		if let Ok(imm) = parse_int::parse::<u32>(imm) {
-			self.push_i(Op::Lui, 0, t, imm >> 16)?;
-			self.push_i(Op::Ori, t, t, imm & 0xffff)
-		} else {
-			self.push_i_label(Op::Lui, 0, t, imm, 16..32, 0, false)?;
-			self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false)
-		}
+		let imm = parse_int::parse::<u32>(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
+		self.push_i(Op::Lui, 0, t, imm >> 16)?;
+		self.push_i(Op::Ori, t, t, imm & 0xffff)
+	}
+
+	fn parse_pseudo_la(&mut self, args: &'a str) -> Result<'a> {
+		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
+		self.push_i_label(Op::Lui, 0, t, imm, 16..32, 0, false)?;
+		self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false)
 	}
 
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) -> Result<'a> {
@@ -423,6 +425,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"lw" => slf.parse_loadstore(Op::Lw, args),
 					"lui" => slf.parse_loadi(Op::Lui, args),
 					"li" => slf.parse_pseudo_li(args),
+					"la" => slf.parse_pseudo_la(args),
 					"sb" => slf.parse_loadstore(Op::Sb, args),
 					"sh" => slf.parse_loadstore(Op::Sh, args),
 					"sw" => slf.parse_loadstore(Op::Sw, args),

@@ -16,6 +16,7 @@ let asm_input_highlight;
 let asm_input_backdrop;
 
 let memory;
+let mem_stack;
 
 let run_interval;
 let run_hz = 8;
@@ -137,6 +138,20 @@ function set_run_hz(e) {
 
 function update_stats() {
 
+	const D = 4;
+
+	let need_mark = (addr_from, addr_to) => {
+		for (let i = 1; i < 32; i++) {
+			let c = mark_registers[i];
+			if (c) {
+				let v = cpu.gp(i);
+				if (addr_from <= v && v < addr_to) {
+					return [v, c];
+				}
+			}
+		}
+	};
+
 	// CPU
 	document.getElementById('cpu_steps').innerHTML = cpu.steps;
 	cpu_ip.innerHTML = '0x' + hex(cpu.ip, 8);
@@ -151,26 +166,33 @@ function update_stats() {
 	cpu_hi.innerHTML = '0x' + hex(cpu.hi, 8);
 	cpu_lo.innerHTML = '0x' + hex(cpu.lo, 8);
 
-	// Memory
-	const D = 4;
+	// Stack
+	let t = '';
+	let sp = cpu.gp(29);
+	for (let i = -4; i <= 12 + 20; i++) {
+		let addr = sp + i * D;
+		let v = mem.get_u32(addr);
+		if (v !== undefined) {
+			v = '<b>0x' + hex(addr, 4) + '</b> 0x' + hex(v, 8);
+		} else {
+			v = '<b>______</b> __________';
+		}
+		let mark = need_mark(addr, addr + D);
+		if (mark) {
+			v = '<mark style="background-color:' + mark[1] + '">' + v + '</mark>';
+		} else if (i === 0) {
+			v = '<mark>' + v + '</mark>';
+		}
+		t += v + '\n';
+	}
+	mem_stack.innerHTML = t;
 
-	let t = '     <b>'
+	// Memory
+	t = '     <b>'
 	for (let i = MEM_WIDTH - D; i >= 0; i -= D) {
 		t += '  ' + hex(i, 2) + '     ';
 	}
 	t += '</b>\n';
-
-	let need_mark = (addr_from, addr_to) => {
-		for (let i = 1; i < 32; i++) {
-			let c = mark_registers[i];
-			if (c) {
-				let v = cpu.gp(i);
-				if (addr_from <= v && v < addr_to) {
-					return [v, c];
-				}
-			}
-		}
-	};
 
 	let n = '<b>0000</b>';
 	for (let i = 0; i < MEM_HEIGHT * MEM_WIDTH; i += D) {
@@ -279,6 +301,7 @@ function init_html() {
 	cpu_hz.innerHTML = (1 << 3) + ' Hz';
 
 	memory = document.getElementById('memory');
+	mem_stack = document.getElementById('memory_stack');
 
 	asm_input = document.getElementById('code_input');
 	asm_input_highlight = document.getElementById('code_highlight');

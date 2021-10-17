@@ -28,7 +28,7 @@
 				</div>
 				<div>
 					<textarea id="code_input" placeholder="Enter assembly here...">
-	li		$1, hello_str
+	la		$1, hello_str
 	li		$gp, 8192
 
 loop:
@@ -52,15 +52,18 @@ hello_str:
 			</div>
 		</div>
 		<div class="section right">
-			<pre id="cpu_registers">
-				<table id="cpu_stats">
-					<tr>
-						<th>Steps</th>
-						<td id="cpu_steps"></td>
-					</tr>
-				</table>
-			</pre>
-			<div id="memory_parent">
+			<div class="subsection top">
+				<pre id="cpu_registers">
+					<table id="cpu_stats">
+						<tr>
+							<th>Steps</th>
+							<td id="cpu_steps"></td>
+						</tr>
+					</table>
+				</pre>
+				<pre id="memory_stack"></pre>
+			</div>
+			<div class="subsection bottom" id="memory_parent">
 				<pre id="memory"></pre>
 			</div>
 		</div>
