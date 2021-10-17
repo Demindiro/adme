@@ -3,7 +3,7 @@ mod source_map;
 pub use source_map::SourceMap;
 
 use crate::interpreter::{Function, Op};
-use crate::util::as_u8_mut;
+use crate::util::*;
 use core::ops::Range;
 use std::collections::HashMap;
 
@@ -37,6 +37,14 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		*mem.get_mut(usize::try_from(self.ip).unwrap())
 			.ok_or(AssembleError::OutOfMemory)? = byte;
 		self.ip = self.ip.wrapping_add(1);
+		Ok(())
+	}
+
+	fn push_half(&mut self, half: u16) -> Result<'a> {
+		let mem = as_u16_mut(self.memory);
+		*mem.get_mut(usize::try_from(self.ip / 2).unwrap())
+			.ok_or(AssembleError::OutOfMemory)? = half;
+		self.ip = self.ip.wrapping_add(2);
 		Ok(())
 	}
 
@@ -368,6 +376,17 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		Ok(())
 	}
 
+	fn parse_integer(&mut self, args: &'a str, length: u8) -> Result<'a> {
+		let e = AssembleError::ExpectedImmediate;
+		match length {
+			1 => self.push_byte(parse_int::parse(args).map_err(|_| e)?)?,
+			2 => self.push_half(parse_int::parse(args).map_err(|_| e)?)?,
+			4 => self.push_word(parse_int::parse(args).map_err(|_| e)?)?,
+			_ => unreachable!(),
+		};
+		Ok(())
+	}
+
 	pub fn assemble(source: &'a str, destination: &'b mut [u32]) -> Result<'a, SourceMap> {
 		let mut slf = Self {
 			known_labels: HashMap::default(),
@@ -442,6 +461,9 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"mtlo" => slf.parse_moveto(Function::Mtlo, args),
 					".ascii" => slf.parse_ascii(args, false),
 					".asciiz" => slf.parse_ascii(args, true),
+					".byte" => slf.parse_integer(args, 1),
+					".half" => slf.parse_integer(args, 2),
+					".word" => slf.parse_integer(args, 4),
 					mnem => Err(AssembleError::UnknownOp(mnem)),
 				}?;
 			} else if line.chars().last() == Some(':') {

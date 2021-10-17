@@ -56,3 +56,10 @@ mtlo	$0
 
 end:
 	j	end
+
+
+.ascii	"Hello, "
+.asciiz	"world!\n"
+.word	0x12345678
+.half	0x9abc
+.byte	0xde
