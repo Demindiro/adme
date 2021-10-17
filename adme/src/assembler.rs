@@ -338,8 +338,15 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	fn parse_pseudo_li(&mut self, args: &'a str) -> Result<'a> {
 		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
 		let imm = parse_int::parse::<u32>(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
-		self.push_i(Op::Lui, 0, t, imm >> 16)?;
-		self.push_i(Op::Ori, t, t, imm & 0xffff)
+		if imm >> 16 != 0 {
+			self.push_i(Op::Lui, 0, t, imm >> 16)?;
+			if imm & 0xffff != 0 {
+				self.push_i(Op::Ori, t, t, imm & 0xffff)?;
+			}
+		} else {
+			self.push_i(Op::Ori, 0, t, imm & 0xffff)?;
+		}
+		Ok(())
 	}
 
 	fn parse_pseudo_la(&mut self, args: &'a str) -> Result<'a> {
