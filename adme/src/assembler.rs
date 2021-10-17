@@ -441,7 +441,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"mthi" => slf.parse_moveto(Function::Mthi, args),
 					"mtlo" => slf.parse_moveto(Function::Mtlo, args),
 					".ascii" => slf.parse_ascii(args, false),
-					".asciz" => slf.parse_ascii(args, true),
+					".asciiz" => slf.parse_ascii(args, true),
 					mnem => Err(AssembleError::UnknownOp(mnem)),
 				}?;
 			} else if line.chars().last() == Some(':') {

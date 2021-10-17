@@ -13,4 +13,4 @@ idle:
 	j	idle
 
 hello_str:
-	.asciz	"Hello, world!\n"
+	.asciiz	"Hello, world!\n"
