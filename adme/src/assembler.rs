@@ -383,6 +383,13 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_i_label(eq_op, 1, 0, label, 2..18, -1, true)
 	}
 
+	fn parse_pseudo_abs(&mut self, args: &'a str) -> Result<'a> {
+		let [t, s] = Self::decode_2_regs(args)?;
+		self.push_i(Op::Lui, 0, 1, 0x7fff)?;
+		self.push_i(Op::Ori, 1, 1, 0xffff)?;
+		self.push_r(s, 1, t, 0, Function::And)
+	}
+
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) -> Result<'a> {
 		for b in snailquote::unescape(args)
 			.map_err(|_| AssembleError::InvalidString)?
@@ -430,6 +437,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			// If this fails, the line is either empty or a label (or invalid)
 			if let Some((mnem, args)) = line.trim().split_once(char::is_whitespace) {
 				match mnem {
+					"abs" => slf.parse_pseudo_abs(args),
 					"add" => slf.parse_arithlog(Function::Add, args),
 					"addu" => slf.parse_arithlog(Function::Addu, args),
 					"addi" => slf.parse_arithlogi(Op::Addi, args),
