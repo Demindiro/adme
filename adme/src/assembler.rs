@@ -368,6 +368,21 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_r(s, t, 0, 0, Function::Add)
 	}
 
+	fn parse_pseudo_branch(&mut self, branch: PseudoBranch, unsigned: bool, args: &'a str) -> Result<'a> {
+		let (a, b, label) = Self::decode_2_regs_1_imm(args)?;
+		let cmp_op = unsigned.then(|| Function::Sltu).unwrap_or(Function::Slt);
+		let (a, b) = match branch {
+			PseudoBranch::Blt | PseudoBranch::Bge => (a, b),
+			PseudoBranch::Bgt | PseudoBranch::Ble => (b, a),
+		};
+		let eq_op = match branch {
+			PseudoBranch::Blt | PseudoBranch::Bgt => Op::Bne,
+			PseudoBranch::Ble | PseudoBranch::Bge => Op::Beq,
+		};
+		self.push_r(1, a, b, 0, cmp_op)?;
+		self.push_i_label(eq_op, 1, 0, label, 2..18, -1, true)
+	}
+
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) -> Result<'a> {
 		for b in snailquote::unescape(args)
 			.map_err(|_| AssembleError::InvalidString)?
@@ -449,6 +464,14 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"bgtz" => slf.parse_branchz(Op::Bgtz, args),
 					"blez" => slf.parse_branchz(Op::Blez, args),
 					"bne" => slf.parse_branch(Op::Bne, args),
+					"blt" => slf.parse_pseudo_branch(PseudoBranch::Blt, false, args),
+					"bgt" => slf.parse_pseudo_branch(PseudoBranch::Bgt, false, args),
+					"ble" => slf.parse_pseudo_branch(PseudoBranch::Ble, false, args),
+					"bge" => slf.parse_pseudo_branch(PseudoBranch::Bge, false, args),
+					"bltu" => slf.parse_pseudo_branch(PseudoBranch::Blt, true, args),
+					"bgtu" => slf.parse_pseudo_branch(PseudoBranch::Bgt, true, args),
+					"bleu" => slf.parse_pseudo_branch(PseudoBranch::Ble, true, args),
+					"bgeu" => slf.parse_pseudo_branch(PseudoBranch::Bge, true, args),
 					"j" => slf.parse_jump(Op::J, args),
 					"lb" => slf.parse_loadstore(Op::Lb, args),
 					"lbu" => slf.parse_loadstore(Op::Lbu, args),
@@ -494,4 +517,11 @@ pub enum AssembleError<'a> {
 	ExpectedOffset,
 	InvalidString,
 	UnexpectedArgument,
+}
+
+enum PseudoBranch {
+	Blt,
+	Ble,
+	Bge,
+	Bgt,
 }
