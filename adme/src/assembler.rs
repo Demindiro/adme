@@ -363,6 +363,11 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_i_label(Op::Ori, t, t, imm, 0..16, 0, false)
 	}
 
+	fn parse_pseudo_move(&mut self, args: &'a str) -> Result<'a> {
+		let [t, s] = Self::decode_2_regs(args)?;
+		self.push_r(s, t, 0, 0, Function::Add)
+	}
+
 	fn parse_ascii(&mut self, args: &'a str, zero_terminate: bool) -> Result<'a> {
 		for b in snailquote::unescape(args)
 			.map_err(|_| AssembleError::InvalidString)?
@@ -418,6 +423,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"andi" => slf.parse_arithlogi(Op::Andi, args),
 					"div" => slf.parse_divmult(Function::Div, args),
 					"divu" => slf.parse_divmult(Function::Divu, args),
+					"move" => slf.parse_pseudo_move(args),
 					"mult" => slf.parse_divmult(Function::Mult, args),
 					"multu" => slf.parse_divmult(Function::Multu, args),
 					"nor" => slf.parse_arithlog(Function::Nor, args),
