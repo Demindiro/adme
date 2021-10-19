@@ -21,7 +21,7 @@ fn main() {
 	let mut cpu = adme::Cpu::new();
 
 	struct Mem {
-		mem: [u32; 1024],
+		mem: [u32; 1024 * 4],
 	}
 
 	impl Mem {
@@ -75,9 +75,20 @@ fn main() {
 		}
 	}
 
-	let mut mem = Mem { mem: [0; 1024] };
+	let mut mem = Mem { mem: [0; 1024 * 4] };
 
 	adme::Assembler::assemble(&asm, &mut mem.mem).unwrap();
+
+	// JIT test
+	{
+		let mut jit = adme::Jit::new(0);
+		mem.mem.iter().take_while(|c| **c != 0).for_each(|c| jit.push(*c));
+		let exec = jit.finish();
+		let mut regs = adme::Registers::new();
+		unsafe {
+			exec.run(&mut regs, &mut mem.mem);
+		}
+	}
 
 	for _ in 0..85 {
 		cpu.step(&mut mem).unwrap();

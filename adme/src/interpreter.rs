@@ -197,15 +197,11 @@ impl Cpu {
 			Op::Blez => self.branch_i(instr, |a, _| a as i32 <= 0)?,
 			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
 			Op::J => {
-				let j = J::decode(instr);
-				// Make 26 bit unsigned int into 28 bit signed int.
-				let offset = (((j.imm << 6) as i32) >> 4) as u32;
+				let offset = (J::decode(instr).imm_i32() << 2) as u32;
 				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
 			Op::Jal => {
-				let j = J::decode(instr);
-				// Make 26 bit unsigned int into 28 bit signed int.
-				let offset = (((j.imm << 6) as i32) >> 4) as u32;
+				let offset = (J::decode(instr).imm_i32() << 2) as u32;
 				self.gp[31] = self.ip;
 				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
@@ -441,5 +437,10 @@ impl J {
 		J {
 			imm: instr & 0x3ff_ffff,
 		}
+	}
+
+	pub(crate) fn imm_i32(&self) -> i32 {
+		// Make 26 bit unsigned int into 26 bit signed int.
+		((self.imm << 6) as i32) >> 6
 	}
 }

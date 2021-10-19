@@ -15,7 +15,8 @@ parse_int = "0.6"
 memmap = { version = "0.7", optional = true }
 
 [features]
-default = ["wasm"]
+#default = ["wasm"]
+default = ["wasm", "jit"]
 wasm = ["wasm-bindgen", "wee_alloc"]
 jit = ["memmap"]
 

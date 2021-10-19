@@ -54,6 +54,12 @@ mod op {
 			self.push_u8(offset as u8);
 		}
 
+		fn op32_r_m_o8(&mut self, op: u8, a: Register, b: Register, offset: i8) {
+			self.push_u8(op | 0b10); // D = 1
+			self.push_u8(1 << 6 | a.num3() << 3 | b.num3()); // MOD = 1 | to | from
+			self.push_u8(offset as u8);
+		}
+
 		pub(super) fn add32_r2(&mut self, a: Register, b: Register) {
 			self.op32_r2(0x01, a, b);
 		}
@@ -66,6 +72,21 @@ mod op {
 		pub(super) fn add_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
 			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
 			self.op32_m_o8_r(0x01, a, offset, b);
+		}
+
+		pub(super) fn add_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
+			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
+			self.op32_r_m_o8(0x01, a, b, offset);
+		}
+
+		pub(super) fn add_m64_32_offset_imm(&mut self, to: Register, offset: isize, imm: isize) {
+			assert!(!to.extended(), "todo");
+			let imm = i8::try_from(imm).expect("todo: 16/32/64 bit immediates");
+			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
+			self.push_u8(0x83); // ADD
+			self.push_u8(1 << 6 | to.num3()); // MOD = 1 | to
+			self.push_u8(offset as u8);
+			self.push_u8(imm as u8);
 		}
 
 		pub(super) fn sub32_r2(&mut self, a: Register, b: Register) {
@@ -134,8 +155,34 @@ mod op {
 
 		pub(super) fn mov_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
 			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-			// src/dst are swapped for mov r, [m] (bit 2 in opcode set)
-			self.op32_m_o8_r(0x8b, b, offset, a);
+			self.op32_r_m_o8(0x89, a, b, offset);
+		}
+
+		pub(super) fn mov_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
+			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
+			self.op32_m_o8_r(0x89, a, offset, b);
+		}
+
+		pub(super) fn movzx_r8_m64_sib_offset(&mut self, dst: Register, base: Register, index: Register, scale: u8, offset: isize) {
+			assert!(scale < 4, "todo");
+			assert!(!dst.extended(), "todo");
+			assert!(!base.extended(), "todo");
+			assert!(!index.extended(), "todo");
+			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
+			self.push_u8(0x0f); // Expansion prefix
+			self.push_u8(0xb6); // MOVZX
+			self.push_u8(1 << 6 | dst.num3() << 3 | 0b100); // MOD = off8 | dst | mode = SIB
+			self.push_u8(scale << 6 | index.num3() << 3 | base.num3()); // scale | index | base
+			self.push_u8(offset as u8);
+		}
+
+		pub(super) fn jz(&mut self, offset: isize) {
+			if let Ok(offset) = i8::try_from(offset - 2) {
+				self.push_u8(0x74);
+				self.push_u8(offset as i8 as u8);
+			} else {
+				todo!("16/32/64 bit jumps");
+			}
 		}
 
 		pub(super) fn jnz(&mut self, offset: isize) {
@@ -144,6 +191,15 @@ mod op {
 				self.push_u8(offset as i8 as u8);
 			} else {
 				todo!("16/32/64 bit jumps");
+			}
+		}
+
+		pub(super) fn jmp(&mut self, offset: isize) {
+			if let Ok(offset) = i8::try_from(offset - 2) {
+				self.push_u8(0xeb); // JMP
+				self.push_u8(offset as u8); // offset
+			} else {
+				todo!("16/32 bit offsets")
 			}
 		}
 
@@ -156,29 +212,52 @@ mod op {
 		pub(super) fn ret(&mut self) {
 			self.push_u8(0xc3);
 		}
+
+		pub(super) fn ud2(&mut self) {
+			self.push_u8(0x0f);
+			self.push_u8(0x0b);
+		}
 	}
 }
 
 use super::IrOp;
 use memmap::{Mmap, MmapMut, MmapOptions};
 
+enum BlockJumpCondition {
+	Always,
+	Equal,
+	NotEqual,
+	LessOrEqual,
+	Greater,
+}
+
+struct BlockJump {
+	location: usize,
+	condition: BlockJumpCondition,
+}
+
 struct Block {
 	code: Vec<u8>,
+	jump: Option<BlockJump>,
 }
 
 impl Block {
 	fn new() -> Self {
-		Self { code: Vec::new() }
+		Self { code: Vec::new(), jump: None }
 	}
 
 	fn push_u8(&mut self, value: u8) {
 		self.code.push(value);
 	}
+
+	fn len(&self) -> usize {
+		self.code.len() + self.jump.is_some().then(|| 2 + 4).unwrap_or(0)
+	}
 }
 
 pub struct Jit {
 	blocks: Vec<Block>,
-	address_map: Vec<(u32, u32)>,
+	address_map: Vec<(usize, usize, usize)>,
 	ip: usize,
 }
 
@@ -195,16 +274,18 @@ impl Jit {
 
 	/// Translate a single instruction.
 	pub(super) fn push(&mut self, op: IrOp) {
-		let blk = self.blocks.last_mut().unwrap();
+		let blk_i = self.blocks.len() - 1;
+		let blk = self.blocks.last().unwrap();
 		let blk_len = blk.code.len();
-		self.address_map.push((0, blk_len.try_into().unwrap()));
+		self.address_map.push((blk_i, blk_len, self.ip));
+		let mut blk = self.blocks.last_mut().unwrap();
 		match op {
 			IrOp::Add { dst, a, b } => {
 				if dst == a || dst == b {
 					blk.mov_r32_m64_offset(
 						op::Register::BX,
 						op::Register::SI,
-						isize::from(a) * 4,
+						isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
 					);
 					blk.add_m64_offset_r32(
 						op::Register::SI,
@@ -212,16 +293,39 @@ impl Jit {
 						op::Register::BX,
 					);
 				} else {
-					todo!("3 operand add");
+					blk.mov_r32_m64_offset(
+						op::Register::BX,
+						op::Register::SI,
+						isize::from(a) * 4,
+					);
+					blk.add_r32_m64_offset(
+						op::Register::BX,
+						op::Register::SI,
+						isize::from(b) * 4,
+					);
+					blk.mov_m64_offset_r32(
+						op::Register::SI,
+						isize::from(b) * 4,
+						op::Register::BX,
+					);
 				}
 			}
 			IrOp::Addi { dst, a, imm } => {
-				assert_eq!(a, 0, "todo: non-move addi");
-				blk.mov_m64_offset_imm(
-					op::Register::SI,
-					isize::from(dst) * 4,
-					imm as usize,
-				)
+				if a == 0 {
+					blk.mov_m64_offset_imm(
+						op::Register::SI,
+						isize::from(dst) * 4,
+						imm as usize,
+					)
+				} else if dst == a {
+					blk.add_m64_32_offset_imm(
+						op::Register::SI,
+						isize::from(dst) * 4,
+						imm,
+					);
+				} else {
+					todo!("3 operand addi");
+				}
 			}
 			IrOp::Ori { dst, a, imm } => {
 				if a == 0 {
@@ -240,33 +344,137 @@ impl Jit {
 					todo!("todo: non-move ori");
 				}
 			}
+			IrOp::Lu8 { reg, mem, offset } => {
+				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(mem) * 4);
+				blk.movzx_r8_m64_sib_offset(op::Register::BX, op::Register::DX, op::Register::BX, 0, offset);
+				blk.mov_m64_offset_r32(op::Register::SI, isize::from(reg) * 4, op::Register::BX);
+			}
+			IrOp::S8 { reg, mem, offset } => {
+				blk.push_u8(0x90); // NOP
+				//todo!();
+			}
+			IrOp::Jump { location } => {
+				dbg!(&self.address_map, location / 4);
+				if let Some(&(loc_blk, loc_ip, _)) = self.address_map.get(location / 4) {
+					dbg!(loc_ip);
+					let offset = if loc_blk == 0 { // FIXME fucking terrible hack
+						let mut len = blk.len();
+						drop(blk);
+						len += self.blocks[0].len();
+						let o = usize::try_from(loc_ip).unwrap().wrapping_sub(dbg!(len)) as isize;
+						blk = &mut self.blocks[blk_i];
+						o
+					} else {
+						assert_eq!(loc_blk, blk_i, "todo");
+						usize::try_from(loc_ip).unwrap().wrapping_sub(blk.code.len()) as isize
+					};
+					dbg!(offset);
+					blk.jmp(offset);
+				} else {
+					todo!();
+					blk.jump = Some(BlockJump {
+						location,
+						condition: BlockJumpCondition::Always,
+					});
+					drop(blk);
+					self.blocks.push(Block::new());
+					blk = &mut self.blocks[blk_i];
+				}
+			}
+			IrOp::JumpIfEqual { a, b, location } => {
+				assert_eq!(location & 0x3, 0, "bad alignment");
+				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
+				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
+				if let Some(&(loc_blk, loc_ip, _)) = self.address_map.get(location / 4) {
+					assert_eq!(loc_blk, blk_i, "todo");
+					let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.len()) as isize;
+					blk.jnz(offset);
+				} else {
+					blk.jump = Some(BlockJump {
+						location,
+						condition: BlockJumpCondition::Equal,
+					});
+					drop(blk);
+					self.blocks.push(Block::new());
+					let i = self.blocks.len() - 2;
+					blk = &mut self.blocks[i];
+				}
+			}
 			IrOp::JumpIfNotEqual { a, b, location } => {
 				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
 				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
 				assert_eq!(location & 0x3, 0, "bad alignment");
-				let (loc_blk, loc_ip) = self.address_map[location / 4];
+				let (loc_blk, loc_ip, _) = self.address_map[location / 4];
 				assert_eq!(loc_blk, 0, "todo");
 				let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.code.len()) as isize;
 				blk.jnz(offset);
 			}
-			IrOp::JumpTo { register } => {
+			IrOp::JumpRegister { register } => {
 				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(register) * 4);
 				blk.add_r64_r64(op::Register::BX, op::Register::DI);
 				blk.jmp_r64(op::Register::BX);
 			}
+			IrOp::InvalidOp => {
+				blk.ud2();
+			}
 			_ => todo!("{:?}", op),
 		}
-		self.ip += blk.code.len() - blk_len;
+		self.ip += blk.len() - blk_len;
 	}
 
 	/// Generate a single block from the given instructions.
 	pub(super) fn finish(mut self) -> Executable {
-		let len = self.blocks.iter().map(|b| b.code.len()).sum();
-		let mut mmap = MmapOptions::new().len(len).map_anon().unwrap();
+		let len: usize = self.blocks.iter().map(|b| b.code.len()).sum();
+		// TODO don't do just *2 dumbass
+		let mut mmap = MmapOptions::new().len(len * 2).map_anon().unwrap();
 		let mut pos = 0;
-		for b in self.blocks {
+
+		let mut blk_offts = Vec::new();
+		// SAFETY: zeroed usize is valid.
+		let mut blk_fill_jmps = unsafe {
+			Box::<[(usize, usize)]>::new_zeroed_slice(self.blocks.len()).assume_init()
+		};
+
+		for (i, b) in self.blocks.iter().enumerate() {
+			let og_pos = pos;
+
 			mmap[pos..pos + b.code.len()].copy_from_slice(&b.code[..]);
+			pos += b.code.len();
+			if let Some(j) = &b.jump {
+				let mut push = |b| {
+					mmap[pos] = b;
+					pos += 1;
+				};
+				match j.condition {
+					BlockJumpCondition::Equal => {
+						// TODO use helper function
+						push(0x0f); // Expansion prefix
+						push(0x84); // JE/JZ rel32
+						dbg!(j.location);
+						blk_fill_jmps[i] = (pos, j.location);
+						pos += 4; // Reserve space
+					}
+					_ => todo!(),
+				}
+			}
+
+			blk_offts.push(pos);
 		}
+
+		for (b, fj) in self.blocks.iter().zip(blk_fill_jmps.iter()) {
+			let (fill, loc) = *fj;
+			if b.jump.is_some() {
+				let pos = self.address_map[loc / 4].2;
+				dbg!(pos, fill + 4);
+				let rel_loc = pos.wrapping_sub(fill + 4 /* acc for instr len */);
+				// FIXME idk why I have an off-by-one error but I no longer care
+				// This one-pass approach is complete shit anyways.
+				let rel_loc = rel_loc + 1;
+				dbg!(rel_loc);
+				mmap[fill..fill + 4].copy_from_slice(&(rel_loc as u32).to_le_bytes());
+			}
+		}
+
 		Executable {
 			mmap: mmap.make_exec().unwrap(),
 		}
@@ -278,8 +486,8 @@ pub struct Executable {
 }
 
 impl Executable {
-	pub unsafe fn run(&self, registers: &mut [u32; 32]) {
-		registers[0] = 0; // Set to ret at start
+	pub unsafe fn run(&self, registers: &mut super::Registers, memory: &mut [u32; 4096]) {
+		registers.gp[31] = 0; // Set to ret at start
 		asm!(
 			"
 				push	rbx
@@ -287,6 +495,7 @@ impl Executable {
 
 				mov		rbx, rdi
 				inc		rbx			# Skip ret at start
+			break_on_me:
 				call	rbx
 
 				pop		rbp
@@ -294,6 +503,7 @@ impl Executable {
 			",
 			in("rdi") self.mmap.as_ptr(),
 			in("rsi") registers,
+			in("rdx") memory,
 			lateout("rax") _,
 			lateout("rcx") _,
 			lateout("rdx") _,
@@ -354,11 +564,11 @@ mod test {
 			ip: 6,
 		};
 		let exec = jit.finish();
-		let mut regs = [0; 32];
+		let mut regs = crate::Registers::new();
 		unsafe {
 			exec.run(&mut regs);
 		}
-		assert_eq!(regs[0], 0x1234);
-		assert_eq!(&regs[1..], &[0; 31]);
+		assert_eq!(regs.gp[0], 0x1234);
+		assert_eq!(&regs.gp[1..], &[0; 31]);
 	}
 }

@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "jit", feature(asm, naked_functions))]
+#![cfg_attr(feature = "jit", feature(asm, naked_functions, new_uninit))]
 
 mod assembler;
 mod interpreter;
@@ -9,6 +9,8 @@ mod util;
 
 pub use assembler::{Assembler, SourceMap};
 pub use interpreter::Cpu;
+#[cfg(feature = "jit")]
+pub use jit::{Jit, Registers};
 pub use memory::*;
 
 #[cfg(feature = "wasm")]
