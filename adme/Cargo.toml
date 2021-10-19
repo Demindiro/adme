@@ -12,10 +12,12 @@ wasm-bindgen = { version = "0.2", optional = true }
 wee_alloc = { version = "0.4", optional = true }
 snailquote = "0.3"
 parse_int = "0.6"
+memmap = { version = "0.7", optional = true }
 
 [features]
 default = ["wasm"]
 wasm = ["wasm-bindgen", "wee_alloc"]
+jit = ["memmap"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

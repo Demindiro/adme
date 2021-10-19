@@ -121,7 +121,7 @@ impl Cpu {
 		self.ip = self.ip.wrapping_add(4);
 		match Op::try_from(instr)? {
 			Op::Function => {
-				let r = Self::decode_r(instr);
+				let r = R::decode(instr);
 				match Function::try_from(instr)? {
 					Function::Add => {
 						self.gp[r.d] = (self.gp[r.s] as i32)
@@ -197,13 +197,13 @@ impl Cpu {
 			Op::Blez => self.branch_i(instr, |a, _| a as i32 <= 0)?,
 			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
 			Op::J => {
-				let j = Self::decode_j(instr);
+				let j = J::decode(instr);
 				// Make 26 bit unsigned int into 28 bit signed int.
 				let offset = (((j.imm << 6) as i32) >> 4) as u32;
 				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
 			Op::Jal => {
-				let j = Self::decode_j(instr);
+				let j = J::decode(instr);
 				// Make 26 bit unsigned int into 28 bit signed int.
 				let offset = (((j.imm << 6) as i32) >> 4) as u32;
 				self.gp[31] = self.ip;
@@ -211,61 +211,61 @@ impl Cpu {
 			}
 
 			Op::Lb => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
 				self.gp[i.t] = m as i8 as i32 as u32;
 			}
 			Op::Lbu => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
 				self.gp[i.t] = m.into();
 			}
 			Op::Lh => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
 				self.gp[i.t] = m as i16 as i32 as u32;
 			}
 			Op::Lhu => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
 				self.gp[i.t] = m.into();
 			}
 			Op::Lw => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				let m = memory.load_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
 				self.gp[i.t] = m;
 			}
 			Op::Lui => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				self.gp[i.t] = u32::from(i.imm) << 16;
 			}
 			Op::Lhi => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				self.gp[i.t] &= 0x0000_ffff;
 				self.gp[i.t] |= u32::from(i.imm) << 16;
 			}
 			Op::Llo => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				self.gp[i.t] &= 0xffff_0000;
 				self.gp[i.t] |= u32::from(i.imm);
 			}
 
 			Op::Sb => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				memory.store_u8(
 					self.gp[i.s].wrapping_add(i.imm as i16 as u32),
 					self.gp[i.t] as u8,
 				)?;
 			}
 			Op::Sh => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				memory.store_u16(
 					self.gp[i.s].wrapping_add(i.imm as i16 as u32),
 					self.gp[i.t] as u16,
 				)?;
 			}
 			Op::Sw => {
-				let i = Self::decode_i(instr);
+				let i = I::decode(instr);
 				memory.store_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t])?;
 			}
 		}
@@ -276,7 +276,7 @@ impl Cpu {
 	}
 
 	fn apply_r(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> u32) {
-		let r = Self::decode_r(instr);
+		let r = R::decode(instr);
 		self.gp[r.d] = f(self.gp[r.s], self.gp[r.t]);
 	}
 
@@ -285,21 +285,13 @@ impl Cpu {
 		instr: u32,
 		f: impl FnOnce(u32, u32) -> Option<u32>,
 	) -> Result<(), StepError> {
-		let r = Self::decode_r(instr);
+		let r = R::decode(instr);
 		self.gp[r.d] = f(self.gp[r.s], self.gp[r.t]).ok_or(StepError::Trap)?;
 		Ok(())
 	}
 
-	fn decode_r(instr: u32) -> R {
-		R {
-			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
-			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
-			d: ((instr >> 11) & 0x1f).try_into().unwrap(),
-		}
-	}
-
 	fn apply_i(&mut self, instr: u32, f: impl FnOnce(u32, u16) -> u32) {
-		let i = Self::decode_i(instr);
+		let i = I::decode(instr);
 		self.gp[i.t] = f(self.gp[i.s], i.imm);
 	}
 
@@ -308,13 +300,13 @@ impl Cpu {
 		instr: u32,
 		f: impl FnOnce(u32, u16) -> Option<u32>,
 	) -> Result<(), StepError> {
-		let i = Self::decode_i(instr);
+		let i = I::decode(instr);
 		self.gp[i.t] = f(self.gp[i.s], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
 	}
 
 	fn branch_i(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> bool) -> Result<(), StepError> {
-		let i = Self::decode_i(instr);
+		let i = I::decode(instr);
 		if f(self.gp[i.s], self.gp[i.t]) {
 			self.ip = self.ip.wrapping_add((i.imm as i16 as u32) << 2);
 		}
@@ -326,23 +318,9 @@ impl Cpu {
 		instr: u32,
 		f: impl FnOnce(u32, u32, u16) -> Option<()>,
 	) -> Result<(), StepError> {
-		let i = Self::decode_i(instr);
+		let i = I::decode(instr);
 		f(self.gp[i.s], self.gp[i.t], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
-	}
-
-	fn decode_i(instr: u32) -> I {
-		I {
-			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
-			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
-			imm: instr as u16,
-		}
-	}
-
-	fn decode_j(instr: u32) -> J {
-		J {
-			imm: instr & 0x3ff_ffff,
-		}
 	}
 }
 
@@ -422,18 +400,46 @@ impl From<StoreError> for StepError {
 	}
 }
 
-struct R {
-	s: usize,
-	t: usize,
-	d: usize,
+pub(crate) struct R {
+	pub(crate) s: usize,
+	pub(crate) t: usize,
+	pub(crate) d: usize,
 }
 
-struct I {
-	s: usize,
-	t: usize,
-	imm: u16,
+impl R {
+	pub(crate) fn decode(instr: u32) -> R {
+		R {
+			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
+			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
+			d: ((instr >> 11) & 0x1f).try_into().unwrap(),
+		}
+	}
 }
 
-struct J {
-	imm: u32,
+pub(crate) struct I {
+	pub(crate) s: usize,
+	pub(crate) t: usize,
+	pub(crate) imm: u16,
+}
+
+impl I {
+	pub(crate) fn decode(instr: u32) -> I {
+		I {
+			s: ((instr >> 21) & 0x1f).try_into().unwrap(),
+			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
+			imm: instr as u16,
+		}
+	}
+}
+
+pub(crate) struct J {
+	pub(crate) imm: u32,
+}
+
+impl J {
+	pub(crate) fn decode(instr: u32) -> J {
+		J {
+			imm: instr & 0x3ff_ffff,
+		}
+	}
 }

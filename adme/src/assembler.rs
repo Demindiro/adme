@@ -343,9 +343,18 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_j_label(op, args.trim(), 2..28, true)
 	}
 
+	fn parse_jumpr(&mut self, function: Function, args: &'a str) -> Result<'a> {
+		let s = Self::decode_1_reg(args)?;
+		self.push_r(s, 0, 0, 0, function)
+	}
+
 	fn parse_pseudo_li(&mut self, args: &'a str) -> Result<'a> {
 		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
-		let imm = parse_int::parse::<u32>(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
+		let imm = parse_int::parse::<i64>(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
+		if imm < i64::from(i32::MIN) || i64::from(u32::MAX) < imm {
+			return Err(AssembleError::ImmediateTooLarge);
+		}
+		let imm = imm as u32;
 		if imm >> 16 != 0 {
 			self.push_i(Op::Lui, 0, t, imm >> 16)?;
 			if imm & 0xffff != 0 {
@@ -481,6 +490,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 					"bleu" => slf.parse_pseudo_branch(PseudoBranch::Ble, true, args),
 					"bgeu" => slf.parse_pseudo_branch(PseudoBranch::Bge, true, args),
 					"j" => slf.parse_jump(Op::J, args),
+					"jr" => slf.parse_jumpr(Function::Jr, args),
 					"lb" => slf.parse_loadstore(Op::Lb, args),
 					"lbu" => slf.parse_loadstore(Op::Lbu, args),
 					"lh" => slf.parse_loadstore(Op::Lh, args),
@@ -525,6 +535,7 @@ pub enum AssembleError<'a> {
 	ExpectedOffset,
 	InvalidString,
 	UnexpectedArgument,
+	ImmediateTooLarge,
 }
 
 enum PseudoBranch {
