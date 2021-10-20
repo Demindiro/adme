@@ -376,7 +376,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_pseudo_move(&mut self, args: &'a str) -> Result<'a> {
 		let [t, s] = Self::decode_2_regs(args)?;
-		self.push_r(s, t, 0, 0, Function::Add)
+		self.push_r(s, 0, t, 0, Function::Add)
 	}
 
 	fn parse_pseudo_branch(&mut self, branch: PseudoBranch, unsigned: bool, args: &'a str) -> Result<'a> {
