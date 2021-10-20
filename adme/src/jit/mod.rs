@@ -1,4 +1,13 @@
 //! # JIT compilers
+//!
+//! ## Operation
+//!
+//! - First, IR is generated. Alongside the IR, a source to IR PC mapping
+//!   is created.
+//! - Then, the IR is split up in basic blocks based on jumps in the IR. Each block is linked to
+//!   other. Each block may link to zero, one or two blocks.
+//! - Each block is passed to the host compiler, which converts it to host machine code.
+//! - Finally, all blocks are combined and an executable region is produced.
 
 mod x86_64;
 
@@ -203,17 +212,24 @@ enum IrOp {
 		offset: isize,
 	},
 	InvalidOp,
-	Nop,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum BlockLink {
+	Next,
+	Jump(usize),
+	Branch(usize),
 }
 
 pub struct Jit {
-	inner: x86_64::Jit,
+	ir: Vec<IrOp>,
 	pc: usize,
+	address_map: Vec<usize>,
 }
 
 impl Jit {
 	pub fn new(pc: usize) -> Self {
-		Self { inner: x86_64::Jit::new(), pc }
+		Self { ir: Vec::new(), pc, address_map: Vec::new() }
 	}
 
 	pub fn push(&mut self, instr: u32) {
@@ -225,126 +241,200 @@ impl Jit {
 			let ops = match op {
 				Op::Function => match dbg!(Function::try_from(instr).unwrap()) {
 					// TODO check for overflow
-					Function::Add => [IrOp::Add { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Addu => [IrOp::Add { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Add => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Addu => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
 					// TODO check for overflow
-					Function::Sub => [IrOp::Sub { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Subu => [IrOp::Sub { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Mult => [IrOp::Muls { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Multu => [IrOp::Mulu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Div => [IrOp::Divs { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Divu => [IrOp::Divu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::And => [IrOp::And { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Or => [IrOp::Or { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Xor => [IrOp::Xor { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Nor => [IrOp::Nor { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Sll => [IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
-					Function::Srl => [IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
-					Function::Sra => [IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
-					Function::Sllv => [IrOp::Sl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Srlv => [IrOp::Srl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Srav => [IrOp::Sra { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Jr => [IrOp::Jr { register: r.s }, IrOp::Nop],
-					Function::Jalr => [IrOp::Jalr { link: r.t, register: r.s }, IrOp::Nop],
-					Function::Mfhi => [IrOp::Or { dst: r.d, a: 0, b: 32 }, IrOp::Nop],
-					Function::Mflo => [IrOp::Or { dst: r.d, a: 0, b: 33 }, IrOp::Nop],
-					Function::Mthi => [IrOp::Or { dst: 32, a: 0, b: r.d }, IrOp::Nop],
-					Function::Mtlo => [IrOp::Or { dst: 33, a: 0, b: r.d }, IrOp::Nop],
-					Function::Slt => [IrOp::Slts { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Sltu => [IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Sub => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Subu => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Mult => (IrOp::Muls { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Multu => (IrOp::Mulu { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Div => (IrOp::Divs { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Divu => (IrOp::Divu { dst: r.d, a: r.s, b: r.t }, None),
+					Function::And => (IrOp::And { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Or => (IrOp::Or { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Xor => (IrOp::Xor { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Nor => (IrOp::Nor { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Sll => (IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Function::Srl => (IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Function::Sra => (IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Function::Sllv => (IrOp::Sl { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Srlv => (IrOp::Srl { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Srav => (IrOp::Sra { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Jr => (IrOp::Jr { register: r.s }, None),
+					Function::Jalr => (IrOp::Jalr { link: r.t, register: r.s }, None),
+					Function::Mfhi => (IrOp::Or { dst: r.d, a: 0, b: 32 }, None),
+					Function::Mflo => (IrOp::Or { dst: r.d, a: 0, b: 33 }, None),
+					Function::Mthi => (IrOp::Or { dst: 32, a: 0, b: r.d }, None),
+					Function::Mtlo => (IrOp::Or { dst: 33, a: 0, b: r.d }, None),
+					Function::Slt => (IrOp::Slts { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Sltu => (IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, None),
 				}
 				// TODO: check for overflow
 				Op::Addi => {
-					[IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, IrOp::Nop]
+					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, None)
 				}
 				Op::Addiu => {
-					[IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, IrOp::Nop]
+					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, None)
 				}
 				Op::Andi => {
-					[IrOp::Andi { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
+					(IrOp::Andi { dst: i.t, a: i.s, imm: i.imm.into() }, None)
 				}
 				Op::Ori => {
-					[IrOp::Ori { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
+					(IrOp::Ori { dst: i.t, a: i.s, imm: i.imm.into() }, None)
 				}
 				Op::Xori => {
-					[IrOp::Xori { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
+					(IrOp::Xori { dst: i.t, a: i.s, imm: i.imm.into() }, None)
 				}
 				Op::Slti => {
-					[IrOp::Sltis { dst: i.t, a: i.s, imm: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Sltis { dst: i.t, a: i.s, imm: i.imm_i16().into() }, None)
 				}
 				Op::Sltiu => {
-					[IrOp::Sltiu { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
+					(IrOp::Sltiu { dst: i.t, a: i.s, imm: i.imm.into() }, None)
 				}
 				Op::Beq => {
-					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
-					[IrOp::Beq { a: i.s, b: i.t, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1);
+					(IrOp::Beq { a: i.s, b: i.t, location }, None)
 				}
 				Op::Bne => {
-					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
-					[IrOp::Bne { a: i.s, b: i.t, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1);
+					(IrOp::Bne { a: i.s, b: i.t, location }, None)
 				}
-				Op::Lui => [IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 }, IrOp::Nop],
-				Op::Lhi => [
+				Op::Lui => (IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 }, None),
+				Op::Lhi => (
 					IrOp::Andi { dst: i.t, a: i.t, imm: 0x0000_ffff },
-					IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) << 16 },
-				],
-				Op::Llo => [
+					Some(IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) << 16 }),
+				),
+				Op::Llo => (
 					IrOp::Andi { dst: i.t, a: i.t, imm: 0xffff_0000 },
-					IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) },
-				],
+					Some(IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) }),
+				),
 				Op::Lb => {
-					[IrOp::Li8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Li8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Lbu => {
-					[IrOp::Lu8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Lu8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Lh => {
-					[IrOp::Li16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Li16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Lhu => {
-					[IrOp::Lu16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Lu16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Lw => {
-					[IrOp::Lu32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::Lu32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Sb => {
-					[IrOp::S8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::S8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Sh => {
-					[IrOp::S16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::S16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::Sw => {
-					[IrOp::S32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
+					(IrOp::S32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, None)
 				}
 				Op::J => {
-					let location = self.pc.wrapping_add(j.imm_i32() as usize) << 2;
+					let location = self.pc.wrapping_add(j.imm_i32() as usize);
 					dbg!(self.pc, j.imm_i32(), location);
-					[IrOp::J { location }, IrOp::Nop]
+					(IrOp::J { location }, None)
 				}
 				Op::Jal => {
-					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::Jal { link: i.t, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
+					(IrOp::Jal { link: i.t, location }, None)
 				}
 				Op::Blez => {
-					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::Ble { a: i.s, b: 0, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
+					(IrOp::Ble { a: i.s, b: 0, location }, None)
 				}
 				Op::Bgtz => {
-					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::Bgt { a: i.s, b: 0, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
+					(IrOp::Bgt { a: i.s, b: 0, location }, None)
 				}
 			};
-			dbg!(ops[0]);
-			self.inner.push(ops[0]);
+			self.address_map.push(self.ir.len());
+			self.ir.push(ops.0);
+			ops.1.map(|op| self.ir.push(op));
 		} else {
-			dbg!(IrOp::InvalidOp);
-			self.inner.push(IrOp::InvalidOp);
+			self.ir.push(IrOp::InvalidOp);
 		}
 		self.pc += 1;
 	}
 
 	pub fn finish(self) -> x86_64::Executable {
-		self.inner.finish()
+		// Find all jumps locations in IR space
+		let mut jump_locations = Vec::new();
+		for (i, op) in self.ir.iter().enumerate() {
+			match op {
+				IrOp::J { location }
+				| IrOp::Jal { location, .. }
+				| IrOp::Bgt { location, .. }
+				| IrOp::Ble { location, .. }
+				| IrOp::Beq { location, .. }
+				| IrOp::Bne { location, .. }
+				=> {
+					let loc = self.address_map[*location];
+					jump_locations.push(i + 1);
+					jump_locations.push(loc);
+				}
+				_ => (),
+			}
+		}
+		jump_locations.sort_unstable();
+		jump_locations.dedup();
+		dbg!(&jump_locations);
+
+		// Link each block to other blocks
+		let mut block_links = Vec::new();
+		for (i, loc) in jump_locations.iter().enumerate() {
+			dbg!(self.ir[*loc - 1]);
+			match &self.ir[*loc - 1] {
+				IrOp::J { location }
+				| IrOp::Jal { location, .. }
+				=> {
+					// Link to one block
+					let location = self.address_map[*location];
+					let block = jump_locations.binary_search(&location).unwrap();
+					// + 1 because we don't include the start of block 0
+					block_links.push(Some(BlockLink::Jump(block + 1)))
+				}
+				IrOp::Bgt { location, .. }
+				| IrOp::Ble { location, .. }
+				| IrOp::Beq { location, .. }
+				| IrOp::Bne { location, .. }
+				=> {
+					// Link to the next and another block
+					let location = self.address_map[*location];
+					let block = jump_locations.binary_search(&location).unwrap();
+					// + 1 because we don't include the start of block 0
+					block_links.push(Some(BlockLink::Branch(block + 1)))
+				}
+				IrOp::Jr { .. }
+				| IrOp::Jalr { .. }
+				=> {
+					// No definite links
+					block_links.push(None);
+				}
+				_ => {
+					// Link to the next block
+					block_links.push(Some(BlockLink::Next))
+				}
+			}
+		}
+
+		// Compile each block
+		let mut host_jit = x86_64::Jit::new();
+		let mut prev_split = 0;
+		for split in jump_locations {
+			let block = &self.ir[prev_split..split];
+			if !block.is_empty() {
+				host_jit.compile(block);
+				prev_split = split;
+			}
+		}
+		let block = &self.ir[prev_split..];
+		(!block.is_empty()).then(|| host_jit.compile(block));
+
+		// Link all blocks together
+		host_jit.link(&block_links)
 	}
 }
 

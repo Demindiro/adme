@@ -220,259 +220,207 @@ mod op {
 	}
 }
 
-use super::IrOp;
+use super::{IrOp, BlockLink};
 use memmap::{Mmap, MmapMut, MmapOptions};
 
-enum BlockJumpCondition {
-	Always,
+#[derive(Clone, Copy, Debug)]
+enum BlockJump {
 	Equal,
 	NotEqual,
 	LessOrEqual,
 	Greater,
 }
 
-struct BlockJ {
-	location: usize,
-	condition: BlockJumpCondition,
-}
-
 struct Block {
 	code: Vec<u8>,
-	jump: Option<BlockJ>,
+	jump_condition: Option<BlockJump>,
 }
 
 impl Block {
 	fn new() -> Self {
-		Self { code: Vec::new(), jump: None }
+		Self { code: Vec::new(), jump_condition: None }
 	}
 
 	fn push_u8(&mut self, value: u8) {
 		self.code.push(value);
 	}
-
-	fn len(&self) -> usize {
-		self.code.len() + self.jump.is_some().then(|| 2 + 4).unwrap_or(0)
-	}
 }
 
 pub struct Jit {
 	blocks: Vec<Block>,
-	address_map: Vec<(usize, usize, usize)>,
-	ip: usize,
+	splits: Vec<BlockJump>,
 }
 
 impl Jit {
 	pub fn new() -> Self {
-		let mut blk = Block::new();
-		blk.ret();
 		Self {
-			blocks: Vec::from([blk]),
-			address_map: Vec::new(),
-			ip: 0,
+			blocks: Vec::new(),
+			splits: Vec::new(),
 		}
 	}
 
-	/// Translate a single instruction.
-	pub(super) fn push(&mut self, op: IrOp) {
-		let blk_i = self.blocks.len() - 1;
-		let blk = self.blocks.last().unwrap();
-		let blk_len = blk.code.len();
-		self.address_map.push((blk_i, blk_len, self.ip));
-		let mut blk = self.blocks.last_mut().unwrap();
-		match op {
-			IrOp::Add { dst, a, b } => {
-				if dst == a || dst == b {
-					blk.mov_r32_m64_offset(
-						op::Register::BX,
-						op::Register::SI,
-						isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
-					);
-					blk.add_m64_offset_r32(
-						op::Register::SI,
-						isize::from(dst) * 4,
-						op::Register::BX,
-					);
-				} else {
-					blk.mov_r32_m64_offset(
-						op::Register::BX,
-						op::Register::SI,
-						isize::from(a) * 4,
-					);
-					blk.add_r32_m64_offset(
-						op::Register::BX,
-						op::Register::SI,
-						isize::from(b) * 4,
-					);
-					blk.mov_m64_offset_r32(
-						op::Register::SI,
-						isize::from(b) * 4,
-						op::Register::BX,
-					);
-				}
-			}
-			IrOp::Addi { dst, a, imm } => {
-				if a == 0 {
-					blk.mov_m64_offset_imm(
-						op::Register::SI,
-						isize::from(dst) * 4,
-						imm as usize,
-					)
-				} else if dst == a {
-					blk.add_m64_32_offset_imm(
-						op::Register::SI,
-						isize::from(dst) * 4,
-						imm,
-					);
-				} else {
-					todo!("3 operand addi");
-				}
-			}
-			IrOp::Ori { dst, a, imm } => {
-				if a == 0 {
-					blk.mov_m64_offset_imm(
-						op::Register::SI,
-						isize::from(dst) * 4,
-						imm as usize,
-					)
-				} else if dst == a {
-					blk.or_m64_offset_imm(
-						op::Register::SI,
-						isize::from(dst) * 4,
-						imm as usize,
-					)
-				} else {
-					todo!("todo: non-move ori");
-				}
-			}
-			IrOp::Lu8 { reg, mem, offset } => {
-				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(mem) * 4);
-				blk.movzx_r8_m64_sib_offset(op::Register::BX, op::Register::DX, op::Register::BX, 0, offset);
-				blk.mov_m64_offset_r32(op::Register::SI, isize::from(reg) * 4, op::Register::BX);
-			}
-			IrOp::S8 { reg, mem, offset } => {
-				blk.push_u8(0x90); // NOP
-				//todo!();
-			}
-			IrOp::J { location } => {
-				dbg!(&self.address_map, location / 4);
-				if let Some(&(loc_blk, loc_ip, _)) = self.address_map.get(location / 4) {
-					dbg!(loc_ip);
-					let offset = if loc_blk == 0 { // FIXME fucking terrible hack
-						let mut len = blk.len();
-						drop(blk);
-						len += self.blocks[0].len();
-						let o = usize::try_from(loc_ip).unwrap().wrapping_sub(dbg!(len)) as isize;
-						blk = &mut self.blocks[blk_i];
-						o
+	/// Translate a single block
+	pub(super) fn compile(&mut self, ir: &[IrOp]) {
+		dbg!(ir);
+		let mut blk = Block::new();
+		for op in ir {
+			match *op {
+				IrOp::Add { dst, a, b } => {
+					if dst == a || dst == b {
+						blk.mov_r32_m64_offset(
+							op::Register::BX,
+							op::Register::SI,
+							isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
+						);
+						blk.add_m64_offset_r32(
+							op::Register::SI,
+							isize::from(dst) * 4,
+							op::Register::BX,
+						);
 					} else {
-						assert_eq!(loc_blk, blk_i, "todo");
-						usize::try_from(loc_ip).unwrap().wrapping_sub(blk.code.len()) as isize
-					};
-					dbg!(offset);
-					blk.jmp(offset);
-				} else {
-					todo!();
-					blk.jump = Some(BlockJ {
-						location,
-						condition: BlockJumpCondition::Always,
-					});
-					drop(blk);
-					self.blocks.push(Block::new());
-					blk = &mut self.blocks[blk_i];
+						blk.mov_r32_m64_offset(
+							op::Register::BX,
+							op::Register::SI,
+							isize::from(a) * 4,
+						);
+						blk.add_r32_m64_offset(
+							op::Register::BX,
+							op::Register::SI,
+							isize::from(b) * 4,
+						);
+						blk.mov_m64_offset_r32(
+							op::Register::SI,
+							isize::from(b) * 4,
+							op::Register::BX,
+						);
+					}
 				}
-			}
-			IrOp::Beq { a, b, location } => {
-				assert_eq!(location & 0x3, 0, "bad alignment");
-				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
-				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
-				if let Some(&(loc_blk, loc_ip, _)) = self.address_map.get(location / 4) {
-					assert_eq!(loc_blk, blk_i, "todo");
-					let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.len()) as isize;
-					blk.jnz(offset);
-				} else {
-					blk.jump = Some(BlockJ {
-						location,
-						condition: BlockJumpCondition::Equal,
-					});
-					drop(blk);
-					self.blocks.push(Block::new());
-					let i = self.blocks.len() - 2;
-					blk = &mut self.blocks[i];
+				IrOp::Addi { dst, a, imm } => {
+					if a == 0 {
+						blk.mov_m64_offset_imm(
+							op::Register::SI,
+							isize::from(dst) * 4,
+							imm as usize,
+						)
+					} else if dst == a {
+						blk.add_m64_32_offset_imm(
+							op::Register::SI,
+							isize::from(dst) * 4,
+							imm,
+						);
+					} else {
+						todo!("3 operand addi");
+					}
 				}
+				IrOp::Ori { dst, a, imm } => {
+					if a == 0 {
+						blk.mov_m64_offset_imm(
+							op::Register::SI,
+							isize::from(dst) * 4,
+							imm as usize,
+						)
+					} else if dst == a {
+						blk.or_m64_offset_imm(
+							op::Register::SI,
+							isize::from(dst) * 4,
+							imm as usize,
+						)
+					} else {
+						todo!("todo: non-move ori");
+					}
+				}
+				IrOp::Lu8 { reg, mem, offset } => {
+					blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(mem) * 4);
+					blk.movzx_r8_m64_sib_offset(op::Register::BX, op::Register::DX, op::Register::BX, 0, offset);
+					blk.mov_m64_offset_r32(op::Register::SI, isize::from(reg) * 4, op::Register::BX);
+				}
+				IrOp::S8 { reg, mem, offset } => {
+					blk.push_u8(0x90); // NOP
+					//todo!();
+				}
+				IrOp::J { .. } => (), // Nothing to do until link time
+				IrOp::Beq { a, b, .. } | IrOp::Bne { a, b, .. } => {
+					// Insert comparison instruction, wait with jump op until link time
+					blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
+					blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
+					blk.jump_condition = Some(match *op {
+						IrOp::Beq { .. } => BlockJump::Equal,
+						IrOp::Bne { .. } => BlockJump::NotEqual,
+						_ => unreachable!(),
+					});
+				}
+				IrOp::Jr { register } => {
+					// Return to caller to let it handle an arbitrary jump
+					blk.mov_r32_m64_offset(op::Register::AX, op::Register::SI, isize::from(register) * 4);
+					blk.ret();
+				}
+				IrOp::InvalidOp => {
+					blk.ud2();
+				}
+				_ => todo!("{:?}", op),
 			}
-			IrOp::Bne { a, b, location } => {
-				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
-				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
-				assert_eq!(location & 0x3, 0, "bad alignment");
-				let (loc_blk, loc_ip, _) = self.address_map[location / 4];
-				assert_eq!(loc_blk, 0, "todo");
-				let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.code.len()) as isize;
-				blk.jnz(offset);
-			}
-			IrOp::Jr { register } => {
-				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(register) * 4);
-				blk.add_r64_r64(op::Register::BX, op::Register::DI);
-				blk.jmp_r64(op::Register::BX);
-			}
-			IrOp::InvalidOp => {
-				blk.ud2();
-			}
-			_ => todo!("{:?}", op),
 		}
-		self.ip += blk.len() - blk_len;
+		self.blocks.push(blk);
 	}
 
-	/// Generate a single block from the given instructions.
-	pub(super) fn finish(mut self) -> Executable {
-		let len: usize = self.blocks.iter().map(|b| b.code.len()).sum();
+	/// Generate an executable from the blocks.
+	pub(super) fn link(mut self, block_links: &[Option<BlockLink>]) -> Executable {
+		let len = self.blocks.iter().map(|b| b.code.len()).sum::<usize>() + 1;
 		// TODO don't do just *2 dumbass
 		let mut mmap = MmapOptions::new().len(len * 2).map_anon().unwrap();
-		let mut pos = 0;
 
-		let mut blk_offts = Vec::new();
-		// SAFETY: zeroed usize is valid.
-		let mut blk_fill_jmps = unsafe {
-			Box::<[(usize, usize)]>::new_zeroed_slice(self.blocks.len()).assume_init()
+		let mut pos = 0;
+		let mut extend = |sl: &[_], pos: &mut _| {
+			mmap[*pos..*pos + sl.len()].copy_from_slice(sl);
+			*pos += sl.len();
 		};
 
-		for (i, b) in self.blocks.iter().enumerate() {
-			let og_pos = pos;
+		extend(&[0xc3], &mut pos);
 
-			mmap[pos..pos + b.code.len()].copy_from_slice(&b.code[..]);
-			pos += b.code.len();
-			if let Some(j) = &b.jump {
-				let mut push = |b| {
-					mmap[pos] = b;
-					pos += 1;
-				};
-				match j.condition {
-					BlockJumpCondition::Equal => {
-						// TODO use helper function
-						push(0x0f); // Expansion prefix
-						push(0x84); // JE/JZ rel32
-						dbg!(j.location);
-						blk_fill_jmps[i] = (pos, j.location);
-						pos += 4; // Reserve space
-					}
-					_ => todo!(),
-				}
+		dbg!(block_links);
+		dbg!(self.blocks.iter().for_each(|b| { dbg!(b.jump_condition); }));
+
+		let mut block_locations = Vec::new();
+		let mut fill_jumps = Vec::new();
+
+		for (i, (block, links)) in self.blocks.iter().zip(block_links.iter()).enumerate() {
+			block_locations.push(pos);
+			// Copy code
+			extend(&block.code, &mut pos);
+			match *links {
+				Some(BlockLink::Next) => assert!(block.jump_condition.is_none()), // Nothing to do
+				Some(BlockLink::Jump(loc)) => {
+					assert!(block.jump_condition.is_none());
+					// Insert a jump
+					// TODO try to use short jumps. We can determine the maximum distance we need
+					// to jump by summing [block length + 6 bytes for a 32 bit relative jump].
+					extend(&[0xe9, 0, 0, 0, 0], &mut pos);
+					fill_jumps.push((pos - 4, loc));
+				},
+				Some(BlockLink::Branch(loc)) => {
+					assert!(block.jump_condition.is_some());
+					// Insert a conditional jump
+					let op = match block.jump_condition.unwrap() {
+						BlockJump::Equal => 0x84,
+						BlockJump::NotEqual => 0x85,
+						BlockJump::LessOrEqual => 0x8e,
+						BlockJump::Greater => 0x8f,
+					};
+					// TODO ditto
+					extend(&[0x0f, op, 0, 0, 0, 0], &mut pos);
+					fill_jumps.push((pos - 4, loc));
+				},
+				None => extend(&[0x0f, 0x0b], &mut pos),
 			}
-
-			blk_offts.push(pos);
 		}
 
-		for (b, fj) in self.blocks.iter().zip(blk_fill_jmps.iter()) {
-			let (fill, loc) = *fj;
-			if b.jump.is_some() {
-				let pos = self.address_map[loc / 4].2;
-				dbg!(pos, fill + 4);
-				let rel_loc = pos.wrapping_sub(fill + 4 /* acc for instr len */);
-				// FIXME idk why I have an off-by-one error but I no longer care
-				// This one-pass approach is complete shit anyways.
-				let rel_loc = rel_loc + 1;
-				dbg!(rel_loc);
-				mmap[fill..fill + 4].copy_from_slice(&(rel_loc as u32).to_le_bytes());
-			}
+		// Fill out jumps
+		dbg!(&block_locations, &fill_jumps);
+		for (pos, loc) in fill_jumps {
+			let loc = block_locations[loc] as isize;
+			let rel_loc = i32::try_from(loc - pos as isize - 4).unwrap();
+			dbg!((loc, pos, rel_loc));
+			mmap[pos..pos + 4].copy_from_slice(&rel_loc.to_le_bytes());
 		}
 
 		Executable {

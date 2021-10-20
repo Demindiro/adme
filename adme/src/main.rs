@@ -91,7 +91,7 @@ fn main() {
 	}
 
 	for _ in 0..85 {
-		cpu.step(&mut mem).unwrap();
+		//cpu.step(&mut mem).unwrap();
 	}
 }
 
