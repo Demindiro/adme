@@ -80,14 +80,15 @@ fn main() {
 	adme::Assembler::assemble(&asm, &mut mem.mem).unwrap();
 
 	// JIT test
+	#[cfg(feature = "jit")]
 	{
 		extern "C" fn syscall(regs: &mut adme::Registers) {
 			let _ = std::panic::catch_unwind(|| {
-				match regs.gp[adme::Registers::V0] {
+				match regs.gp[2] {
 					10 => std::process::exit(0), // exit
 					11 => { // print_char
 						use std::io::Write;
-						std::io::stdout().write_all(&[regs.gp[adme::Registers::A0] as u8]).unwrap();
+						std::io::stdout().write_all(&[regs.gp[4] as u8]).unwrap();
 						std::io::stdout().flush().unwrap();
 					}
 					s => eprintln!("invalid syscall: {}", s),
@@ -104,8 +105,22 @@ fn main() {
 		}
 	}
 
-	for _ in 0..85 {
-		//cpu.step(&mut mem).unwrap();
+	fn syscall(regs: &mut adme::Cpu) {
+		let _ = std::panic::catch_unwind(|| {
+			match regs.gp()[2] {
+				10 => std::process::exit(0), // exit
+				11 => { // print_char
+					use std::io::Write;
+					std::io::stdout().write_all(&[regs.gp()[4] as u8]).unwrap();
+					std::io::stdout().flush().unwrap();
+				}
+				s => eprintln!("invalid syscall: {}", s),
+			}
+		});
+	}
+
+	loop {
+		cpu.step(&mut mem, syscall).unwrap();
 	}
 }
 

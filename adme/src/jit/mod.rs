@@ -357,6 +357,7 @@ impl Jit {
 			self.ir.push(ops.0);
 			ops.1.map(|op| self.ir.push(op));
 		} else {
+			dbg!(format_args!("{:3} {:x}", self.pc, instr));
 			self.ir.push(IrOp::InvalidOp);
 		}
 		self.pc += 1;

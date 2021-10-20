@@ -1,16 +1,21 @@
-	la		$t0, hello_str
-	li		$t1, 0x2000
+	la		$s0, hello_str
 
 loop:
-	lbu		$t2, 0($t0)
-	beq		$t2, $zero, done
-	sb		$t2, 0($t1)
-	addi	$t0, $t0, 1
+	lbu		$a0, 0($s0)
+	beq		$a0, $zero, done
+	li		$v0, 11
+	syscall
+	addi	$s0, $s0, 1
 	j		loop
 done:
 
+	li		$t0, 0xfffffff
 idle:
-	j	idle
+	addiu	$t0, $t0, 0x-1
+	bne		$t0, $zero, idle
+
+	li		$v0, 10
+	syscall
 
 hello_str:
 	.asciiz	"Hello, world!\n"

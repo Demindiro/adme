@@ -21,4 +21,8 @@ wasm = ["wasm-bindgen", "wee_alloc"]
 jit = ["memmap"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+#crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+lto = "fat"
+#strip = "symbols"

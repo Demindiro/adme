@@ -116,7 +116,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
-	pub fn step(&mut self, memory: &mut impl Memory) -> Result<(), StepError> {
+	pub fn step(&mut self, memory: &mut impl Memory, syscall: fn(&mut Self)) -> Result<(), StepError> {
 		self.gp[0] = 0;
 
 		let instr = memory.load_u32(self.ip)?;
@@ -190,7 +190,7 @@ impl Cpu {
 					Function::Mthi => self.hi = self.gp[r_s],
 					Function::Mtlo => self.lo = self.gp[r_s],
 					
-					Function::Syscall => todo!(),
+					Function::Syscall => syscall(self),
 				}
 			}
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
@@ -323,6 +323,10 @@ impl Cpu {
 		f(self.gp[i_s], self.gp[i_t], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
 	}
+
+	pub fn gp(&self) -> [u32; 32] {
+		self.gp
+	}
 }
 
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
@@ -341,7 +345,8 @@ impl Cpu {
 
 	#[cfg_attr(feature = "wasm", wasm_bindgen(js_name = "step"))]
 	pub fn step_js(&mut self, memory: &mut crate::wasm::Mem) -> Result<(), JsValue> {
-		self.step(memory).map_err(|e| format!("{:?}", e).into())
+		todo!();
+		//self.step(memory).map_err(|e| format!("{:?}", e).into())
 	}
 
 	#[cfg_attr(feature = "wasm", wasm_bindgen(method, getter))]
