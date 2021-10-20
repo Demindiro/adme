@@ -152,20 +152,16 @@ mod op {
 			self.op32_m_r(0x89, dst, src)
 		}
 
-		pub(super) fn mov_m64_offset_imm(&mut self, dst: Register, offset: isize, imm: usize) {
+		pub(super) fn mov_m64_offset_imm32(&mut self, dst: Register, offset: isize, imm: usize) {
 			assert!(!dst.extended(), "todo: extended registers");
 			assert!(offset < 128, "todo: dword offset");
-			if imm <= usize::from(u16::MAX) {
-				self.push_u8(0x66); //  Prefix
-			} else if imm > usize::try_from(u32::MAX).unwrap() {
+			if imm > usize::try_from(u32::MAX).unwrap() {
 				todo!("64 bit immediates");
 			}
 			self.push_u8(0xc7); // MOV
 			self.push_u8(0x40 | dst.num3()); // MOD = 1 | dst
 			self.push_u8(offset as i8 as u8);
-			if imm <= usize::from(u16::MAX) {
-				(imm as u16).to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-			} else if imm <= usize::try_from(u32::MAX).unwrap() {
+			if imm <= usize::try_from(u32::MAX).unwrap() {
 				(imm as u32).to_le_bytes().iter().for_each(|b| self.push_u8(*b));
 			} else {
 				todo!();
@@ -332,7 +328,7 @@ impl Jit {
 				}
 				IrOp::Addi { dst, a, imm } => {
 					if a == 0 {
-						blk.mov_m64_offset_imm(
+						blk.mov_m64_offset_imm32(
 							op::Register::DI,
 							isize::from(dst) * 4,
 							imm as usize,
@@ -349,7 +345,7 @@ impl Jit {
 				}
 				IrOp::Ori { dst, a, imm } => {
 					if a == 0 {
-						blk.mov_m64_offset_imm(
+						blk.mov_m64_offset_imm32(
 							op::Register::DI,
 							isize::from(dst) * 4,
 							imm as usize,
