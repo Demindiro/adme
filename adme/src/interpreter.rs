@@ -116,7 +116,10 @@ pub struct Cpu {
 }
 
 impl Cpu {
-	pub fn step(&mut self, memory: &mut impl Memory, syscall: fn(&mut Self)) -> Result<(), StepError> {
+	pub fn step<M>(&mut self, memory: &mut M, syscall: fn(&mut Self, &mut M)) -> Result<(), StepError>
+	where
+		M: Memory,
+	{
 		self.gp[0] = 0;
 
 		let instr = memory.load_u32(self.ip)?;
@@ -190,7 +193,7 @@ impl Cpu {
 					Function::Mthi => self.hi = self.gp[r_s],
 					Function::Mtlo => self.lo = self.gp[r_s],
 					
-					Function::Syscall => syscall(self),
+					Function::Syscall => syscall(self, memory),
 				}
 			}
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
@@ -324,8 +327,8 @@ impl Cpu {
 		Ok(())
 	}
 
-	pub fn gp(&self) -> [u32; 32] {
-		self.gp
+	pub fn gp(&mut self) -> &mut [u32; 32] {
+		&mut self.gp
 	}
 }
 

@@ -295,7 +295,7 @@ impl Jit {
 	}
 
 	/// Translate a single block
-	pub(super) fn compile(&mut self, ir: &[IrOp], syscall_handler: extern "C" fn(&mut crate::Registers)) {
+	pub(super) fn compile(&mut self, ir: &[IrOp], syscall_handler: extern "C" fn(&mut crate::Registers, &mut [u8; 0x4000])) {
 		dbg!(ir);
 		let mut blk = Block::new();
 		for op in ir {

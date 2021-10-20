@@ -226,11 +226,11 @@ pub struct Jit {
 	ir: Vec<IrOp>,
 	pc: usize,
 	address_map: Vec<usize>,
-	syscall_handler: extern "C" fn(&mut Registers),
+	syscall_handler: extern "C" fn(&mut Registers, &mut [u8; 0x4000]),
 }
 
 impl Jit {
-	pub fn new(pc: usize, syscall_handler: extern "C" fn(&mut Registers)) -> Self {
+	pub fn new(pc: usize, syscall_handler: extern "C" fn(&mut Registers, &mut [u8; 0x4000])) -> Self {
 		Self { ir: Vec::new(), pc, address_map: Vec::new(), syscall_handler }
 	}
 
