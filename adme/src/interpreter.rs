@@ -119,13 +119,19 @@ impl Cpu {
 
 		let instr = memory.load_u32(self.ip)?;
 		self.ip = self.ip.wrapping_add(4);
+
+		let r = R::decode(instr);
+		let i = I::decode(instr);
+		let j = J::decode(instr);
+		let (r_s, r_t, r_d) = (usize::from(r.s), usize::from(r.t), usize::from(r.d));
+		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
+
 		match Op::try_from(instr)? {
 			Op::Function => {
-				let r = R::decode(instr);
 				match Function::try_from(instr)? {
 					Function::Add => {
-						self.gp[r.d] = (self.gp[r.s] as i32)
-							.checked_add(self.gp[r.t] as i32)
+						self.gp[r_d] = (self.gp[r_s] as i32)
+							.checked_add(self.gp[r_t] as i32)
 							.ok_or(StepError::Trap)? as u32
 					}
 					Function::Addu => self.apply_r(instr, u32::wrapping_add),
@@ -133,33 +139,33 @@ impl Cpu {
 					Function::Nor => self.apply_r(instr, |a, b| !(a | b)),
 					Function::Or => self.apply_r(instr, |a, b| a | b),
 					Function::Div => {
-						if self.gp[r.t] == 0 {
+						if self.gp[r_t] == 0 {
 							return Err(StepError::Trap);
 						}
-						self.hi = (self.gp[r.s] as i32 % self.gp[r.t] as i32) as u32;
-						self.lo = (self.gp[r.s] as i32 / self.gp[r.t] as i32) as u32;
+						self.hi = (self.gp[r_s] as i32 % self.gp[r_t] as i32) as u32;
+						self.lo = (self.gp[r_s] as i32 / self.gp[r_t] as i32) as u32;
 					}
 					Function::Divu => {
-						if self.gp[r.t] == 0 {
+						if self.gp[r_t] == 0 {
 							return Err(StepError::Trap);
 						}
-						self.hi = self.gp[r.s] % self.gp[r.t];
-						self.lo = self.gp[r.s] / self.gp[r.t];
+						self.hi = self.gp[r_s] % self.gp[r_t];
+						self.lo = self.gp[r_s] / self.gp[r_t];
 					}
 					Function::Mult => {
-						let r = i64::from(self.gp[r.s] as i32) * i64::from(self.gp[r.t] as i32);
+						let r = i64::from(self.gp[r_s] as i32) * i64::from(self.gp[r_t] as i32);
 						self.hi = (r as u64 >> 32) as u32;
 						self.lo = r as u64 as u32;
 					}
 					Function::Multu => {
-						let r = u64::from(self.gp[r.s]) * u64::from(self.gp[r.t]);
+						let r = u64::from(self.gp[r_s]) * u64::from(self.gp[r_t]);
 						self.hi = (r >> 32) as u32;
 						self.lo = r as u32;
 					}
-					Function::Sll => self.gp[r.d] = self.gp[r.t].wrapping_shl(r.s as u32),
-					Function::Srl => self.gp[r.d] = self.gp[r.t].wrapping_shr(r.s as u32),
+					Function::Sll => self.gp[r_d] = self.gp[r_t].wrapping_shl(r_s as u32),
+					Function::Srl => self.gp[r_d] = self.gp[r_t].wrapping_shr(r_s as u32),
 					Function::Sra => {
-						self.gp[r.d] = (self.gp[r.t] as i32).wrapping_shr(r.s as u32) as u32
+						self.gp[r_d] = (self.gp[r_t] as i32).wrapping_shr(r_s as u32) as u32
 					}
 					Function::Sllv => self.apply_r(instr, u32::wrapping_shl),
 					Function::Srlv => self.apply_r(instr, u32::wrapping_shl),
@@ -171,16 +177,16 @@ impl Cpu {
 					Function::Slt => self.apply_r(instr, |a, b| u32::from((a as i32) < b as i32)),
 					Function::Sltu => self.apply_r(instr, |a, b| u32::from(a < b)),
 
-					Function::Jr => self.ip = self.gp[r.s],
+					Function::Jr => self.ip = self.gp[r_s],
 					Function::Jalr => {
 						self.gp[31] = self.ip;
-						self.ip = self.gp[r.s]
+						self.ip = self.gp[r_s]
 					}
 
-					Function::Mfhi => self.gp[r.d] = self.hi,
-					Function::Mflo => self.gp[r.d] = self.lo,
-					Function::Mthi => self.hi = self.gp[r.s],
-					Function::Mtlo => self.lo = self.gp[r.s],
+					Function::Mfhi => self.gp[r_d] = self.hi,
+					Function::Mflo => self.gp[r_d] = self.lo,
+					Function::Mthi => self.hi = self.gp[r_s],
+					Function::Mtlo => self.lo = self.gp[r_s],
 				}
 			}
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
@@ -197,72 +203,61 @@ impl Cpu {
 			Op::Blez => self.branch_i(instr, |a, _| a as i32 <= 0)?,
 			Op::Bne => self.branch_i(instr, |a, b| a != b)?,
 			Op::J => {
-				let offset = (J::decode(instr).imm_i32() << 2) as u32;
+				let offset = (j.imm_i32() << 2) as u32;
 				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
 			Op::Jal => {
-				let offset = (J::decode(instr).imm_i32() << 2) as u32;
+				let offset = (j.imm_i32() << 2) as u32;
 				self.gp[31] = self.ip;
 				self.ip = self.ip.wrapping_add(offset).wrapping_sub(4);
 			}
 
 			Op::Lb => {
-				let i = I::decode(instr);
-				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
-				self.gp[i.t] = m as i8 as i32 as u32;
+				let m = memory.load_u8(self.gp[i_s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i_t] = m as i8 as i32 as u32;
 			}
 			Op::Lbu => {
-				let i = I::decode(instr);
-				let m = memory.load_u8(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
-				self.gp[i.t] = m.into();
+				let m = memory.load_u8(self.gp[i_s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i_t] = m.into();
 			}
 			Op::Lh => {
-				let i = I::decode(instr);
-				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
-				self.gp[i.t] = m as i16 as i32 as u32;
+				let m = memory.load_u16(self.gp[i_s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i_t] = m as i16 as i32 as u32;
 			}
 			Op::Lhu => {
-				let i = I::decode(instr);
-				let m = memory.load_u16(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
-				self.gp[i.t] = m.into();
+				let m = memory.load_u16(self.gp[i_s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i_t] = m.into();
 			}
 			Op::Lw => {
-				let i = I::decode(instr);
-				let m = memory.load_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32))?;
-				self.gp[i.t] = m;
+				let m = memory.load_u32(self.gp[i_s].wrapping_add(i.imm as i16 as u32))?;
+				self.gp[i_t] = m;
 			}
 			Op::Lui => {
-				let i = I::decode(instr);
-				self.gp[i.t] = u32::from(i.imm) << 16;
+				self.gp[i_t] = u32::from(i.imm) << 16;
 			}
 			Op::Lhi => {
-				let i = I::decode(instr);
-				self.gp[i.t] &= 0x0000_ffff;
-				self.gp[i.t] |= u32::from(i.imm) << 16;
+				self.gp[i_t] &= 0x0000_ffff;
+				self.gp[i_t] |= u32::from(i.imm) << 16;
 			}
 			Op::Llo => {
-				let i = I::decode(instr);
-				self.gp[i.t] &= 0xffff_0000;
-				self.gp[i.t] |= u32::from(i.imm);
+				self.gp[i_t] &= 0xffff_0000;
+				self.gp[i_t] |= u32::from(i.imm);
 			}
 
 			Op::Sb => {
-				let i = I::decode(instr);
 				memory.store_u8(
-					self.gp[i.s].wrapping_add(i.imm as i16 as u32),
-					self.gp[i.t] as u8,
+					self.gp[i_s].wrapping_add(i.imm as i16 as u32),
+					self.gp[i_t] as u8,
 				)?;
 			}
 			Op::Sh => {
-				let i = I::decode(instr);
 				memory.store_u16(
-					self.gp[i.s].wrapping_add(i.imm as i16 as u32),
-					self.gp[i.t] as u16,
+					self.gp[i_s].wrapping_add(i.imm as i16 as u32),
+					self.gp[i_t] as u16,
 				)?;
 			}
 			Op::Sw => {
-				let i = I::decode(instr);
-				memory.store_u32(self.gp[i.s].wrapping_add(i.imm as i16 as u32), self.gp[i.t])?;
+				memory.store_u32(self.gp[i_s].wrapping_add(i.imm as i16 as u32), self.gp[i_t])?;
 			}
 		}
 
@@ -273,7 +268,8 @@ impl Cpu {
 
 	fn apply_r(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> u32) {
 		let r = R::decode(instr);
-		self.gp[r.d] = f(self.gp[r.s], self.gp[r.t]);
+		let (r_s, r_t, r_d) = (usize::from(r.s), usize::from(r.t), usize::from(r.d));
+		self.gp[r_d] = f(self.gp[r_s], self.gp[r_t]);
 	}
 
 	fn apply_r_checked(
@@ -282,13 +278,15 @@ impl Cpu {
 		f: impl FnOnce(u32, u32) -> Option<u32>,
 	) -> Result<(), StepError> {
 		let r = R::decode(instr);
-		self.gp[r.d] = f(self.gp[r.s], self.gp[r.t]).ok_or(StepError::Trap)?;
+		let (r_s, r_t, r_d) = (usize::from(r.s), usize::from(r.t), usize::from(r.d));
+		self.gp[r_d] = f(self.gp[r_s], self.gp[r_t]).ok_or(StepError::Trap)?;
 		Ok(())
 	}
 
 	fn apply_i(&mut self, instr: u32, f: impl FnOnce(u32, u16) -> u32) {
 		let i = I::decode(instr);
-		self.gp[i.t] = f(self.gp[i.s], i.imm);
+		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
+		self.gp[i_t] = f(self.gp[i_s], i.imm);
 	}
 
 	fn apply_i_checked(
@@ -297,13 +295,15 @@ impl Cpu {
 		f: impl FnOnce(u32, u16) -> Option<u32>,
 	) -> Result<(), StepError> {
 		let i = I::decode(instr);
-		self.gp[i.t] = f(self.gp[i.s], i.imm).ok_or(StepError::Trap)?;
+		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
+		self.gp[i_t] = f(self.gp[i_s], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
 	}
 
 	fn branch_i(&mut self, instr: u32, f: impl FnOnce(u32, u32) -> bool) -> Result<(), StepError> {
 		let i = I::decode(instr);
-		if f(self.gp[i.s], self.gp[i.t]) {
+		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
+		if f(self.gp[i_s], self.gp[i_t]) {
 			self.ip = self.ip.wrapping_add((i.imm as i16 as u32) << 2);
 		}
 		Ok(())
@@ -315,7 +315,8 @@ impl Cpu {
 		f: impl FnOnce(u32, u32, u16) -> Option<()>,
 	) -> Result<(), StepError> {
 		let i = I::decode(instr);
-		f(self.gp[i.s], self.gp[i.t], i.imm).ok_or(StepError::Trap)?;
+		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
+		f(self.gp[i_s], self.gp[i_t], i.imm).ok_or(StepError::Trap)?;
 		Ok(())
 	}
 }
@@ -349,8 +350,8 @@ impl Cpu {
 		self.ip
 	}
 
-	#[cfg_attr(feature = "wasm", wasm_bindgen)]
-	pub fn gp(&self, reg: u8) -> Option<u32> {
+	#[cfg_attr(feature = "wasm", wasm_bindgen(js_name = "gp"))]
+	pub fn js_gp(&self, reg: u8) -> Option<u32> {
 		(1 <= reg && reg < 32).then(|| self.gp[usize::from(reg)])
 	}
 
@@ -397,9 +398,9 @@ impl From<StoreError> for StepError {
 }
 
 pub(crate) struct R {
-	pub(crate) s: usize,
-	pub(crate) t: usize,
-	pub(crate) d: usize,
+	pub(crate) s: u8,
+	pub(crate) t: u8,
+	pub(crate) d: u8,
 }
 
 impl R {
@@ -413,8 +414,8 @@ impl R {
 }
 
 pub(crate) struct I {
-	pub(crate) s: usize,
-	pub(crate) t: usize,
+	pub(crate) s: u8,
+	pub(crate) t: u8,
 	pub(crate) imm: u16,
 }
 
@@ -425,6 +426,10 @@ impl I {
 			t: ((instr >> 16) & 0x1f).try_into().unwrap(),
 			imm: instr as u16,
 		}
+	}
+
+	pub(crate) fn imm_i16(&self) -> i16 {
+		self.imm as i16
 	}
 }
 

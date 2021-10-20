@@ -208,11 +208,11 @@ enum IrOp {
 
 pub struct Jit {
 	inner: x86_64::Jit,
-	pc: u32,
+	pc: usize,
 }
 
 impl Jit {
-	pub fn new(pc: u32) -> Self {
+	pub fn new(pc: usize) -> Self {
 		Self { inner: x86_64::Jit::new(), pc }
 	}
 
@@ -225,115 +225,113 @@ impl Jit {
 			let ops = match op {
 				Op::Function => match dbg!(Function::try_from(instr).unwrap()) {
 					// TODO check for overflow
-					Function::Add => [IrOp::Add { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Addu => [IrOp::Add { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
+					Function::Add => [IrOp::Add { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Addu => [IrOp::Add { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
 					// TODO check for overflow
-					Function::Sub => [IrOp::Sub { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Subu => [IrOp::Sub { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Mult => [IrOp::Muls { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Multu => [IrOp::Mulu { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Div => [IrOp::Divs { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Divu => [IrOp::Divu { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::And => [IrOp::And { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Or => [IrOp::Or { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Xor => [IrOp::Xor { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Nor => [IrOp::Nor { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Sll => [IrOp::Sli { dst: r.d.try_into().unwrap(), a: r.t.try_into().unwrap(), imm: r.s.try_into().unwrap() }, IrOp::Nop],
-					Function::Srl => [IrOp::Srli { dst: r.d.try_into().unwrap(), a: r.t.try_into().unwrap(), imm: r.s.try_into().unwrap() }, IrOp::Nop],
-					Function::Sra => [IrOp::Srai { dst: r.d.try_into().unwrap(), a: r.t.try_into().unwrap(), imm: r.s.try_into().unwrap() }, IrOp::Nop],
-					Function::Sllv => [IrOp::Sl { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Srlv => [IrOp::Srl { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Srav => [IrOp::Sra { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Jr => [IrOp::JumpRegister { register: r.s.try_into().unwrap() }, IrOp::Nop],
-					Function::Jalr => [IrOp::JumpAndLinkRegister { link: r.t.try_into().unwrap(), register: r.s.try_into().unwrap() }, IrOp::Nop],
-					Function::Mfhi => [IrOp::Or { dst: r.d.try_into().unwrap(), a: 0, b: 32 }, IrOp::Nop],
-					Function::Mflo => [IrOp::Or { dst: r.d.try_into().unwrap(), a: 0, b: 33 }, IrOp::Nop],
-					Function::Mthi => [IrOp::Or { dst: 32, a: 0, b: r.d.try_into().unwrap() }, IrOp::Nop],
-					Function::Mtlo => [IrOp::Or { dst: 33, a: 0, b: r.d.try_into().unwrap() }, IrOp::Nop],
-					Function::Slt => [IrOp::Slts { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
-					Function::Sltu => [IrOp::Sltu { dst: r.d.try_into().unwrap(), a: r.s.try_into().unwrap(), b: r.t.try_into().unwrap() }, IrOp::Nop],
+					Function::Sub => [IrOp::Sub { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Subu => [IrOp::Sub { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Mult => [IrOp::Muls { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Multu => [IrOp::Mulu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Div => [IrOp::Divs { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Divu => [IrOp::Divu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::And => [IrOp::And { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Or => [IrOp::Or { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Xor => [IrOp::Xor { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Nor => [IrOp::Nor { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Sll => [IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
+					Function::Srl => [IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
+					Function::Sra => [IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, IrOp::Nop],
+					Function::Sllv => [IrOp::Sl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Srlv => [IrOp::Srl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Srav => [IrOp::Sra { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Jr => [IrOp::JumpRegister { register: r.s }, IrOp::Nop],
+					Function::Jalr => [IrOp::JumpAndLinkRegister { link: r.t, register: r.s }, IrOp::Nop],
+					Function::Mfhi => [IrOp::Or { dst: r.d, a: 0, b: 32 }, IrOp::Nop],
+					Function::Mflo => [IrOp::Or { dst: r.d, a: 0, b: 33 }, IrOp::Nop],
+					Function::Mthi => [IrOp::Or { dst: 32, a: 0, b: r.d }, IrOp::Nop],
+					Function::Mtlo => [IrOp::Or { dst: 33, a: 0, b: r.d }, IrOp::Nop],
+					Function::Slt => [IrOp::Slts { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
+					Function::Sltu => [IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
 				}
 				// TODO: check for overflow
 				Op::Addi => {
-					[IrOp::Addi { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: (i.imm as i16 as u32 as isize) }, IrOp::Nop]
+					[IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, IrOp::Nop]
 				}
 				Op::Addiu => {
-					[IrOp::Addi { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: (i.imm as i16 as u32 as isize) }, IrOp::Nop]
+					[IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, IrOp::Nop]
 				}
 				Op::Andi => {
-					[IrOp::Andi { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: i.imm.into() }, IrOp::Nop]
+					[IrOp::Andi { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
 				}
 				Op::Ori => {
-					[IrOp::Ori { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: i.imm.into() }, IrOp::Nop]
+					[IrOp::Ori { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
 				}
 				Op::Xori => {
-					[IrOp::Xori { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: i.imm.into() }, IrOp::Nop]
+					[IrOp::Xori { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
 				}
 				Op::Slti => {
-					[IrOp::Sltis { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: i.imm.try_into().unwrap() }, IrOp::Nop]
+					[IrOp::Sltis { dst: i.t, a: i.s, imm: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Sltiu => {
-					[IrOp::Sltiu { dst: i.t.try_into().unwrap(), a: i.s.try_into().unwrap(), imm: i.imm.into() }, IrOp::Nop]
+					[IrOp::Sltiu { dst: i.t, a: i.s, imm: i.imm.into() }, IrOp::Nop]
 				}
 				Op::Beq => {
-					let location = (self.pc.wrapping_add(i.imm as i16 as u32 + 1) << 2).try_into().unwrap();
-					[IrOp::JumpIfEqual { a: i.s.try_into().unwrap(), b: i.t.try_into().unwrap(), location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
+					[IrOp::JumpIfEqual { a: i.s, b: i.t, location }, IrOp::Nop]
 				}
 				Op::Bne => {
-					let location = (self.pc.wrapping_add(i.imm as i16 as u32 + 1) << 2).try_into().unwrap();
-					[IrOp::JumpIfNotEqual { a: i.s.try_into().unwrap(), b: i.t.try_into().unwrap(), location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
+					[IrOp::JumpIfNotEqual { a: i.s, b: i.t, location }, IrOp::Nop]
 				}
-				Op::Lui => {
-					[IrOp::Addi { dst: i.t.try_into().unwrap(), a: 0, imm: isize::try_from(i.imm).unwrap() << 16 }, IrOp::Nop]
-				}
+				Op::Lui => [IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 }, IrOp::Nop],
 				Op::Lhi => [
-					IrOp::Andi { dst: i.t.try_into().unwrap(), a: i.t.try_into().unwrap(), imm: 0x0000_ffff },
-					IrOp::Ori { dst: i.t.try_into().unwrap(), a: i.t.try_into().unwrap(), imm: usize::from(i.imm) << 16 },
+					IrOp::Andi { dst: i.t, a: i.t, imm: 0x0000_ffff },
+					IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) << 16 },
 				],
 				Op::Llo => [
-					IrOp::Andi { dst: i.t.try_into().unwrap(), a: i.t.try_into().unwrap(), imm: 0xffff_0000 },
-					IrOp::Ori { dst: i.t.try_into().unwrap(), a: i.t.try_into().unwrap(), imm: usize::from(i.imm) },
+					IrOp::Andi { dst: i.t, a: i.t, imm: 0xffff_0000 },
+					IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) },
 				],
 				Op::Lb => {
-					[IrOp::Li8 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::Li8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Lbu => {
-					[IrOp::Lu8 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::Lu8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Lh => {
-					[IrOp::Li16 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::Li16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Lhu => {
-					[IrOp::Lu16 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::Lu16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Lw => {
-					[IrOp::Lu32 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::Lu32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Sb => {
-					[IrOp::S8 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::S8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Sh => {
-					[IrOp::S16 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::S16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::Sw => {
-					[IrOp::S32 { reg: i.t.try_into().unwrap(), mem: i.s.try_into().unwrap(), offset: isize::try_from(i.imm).unwrap() }, IrOp::Nop]
+					[IrOp::S32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() }, IrOp::Nop]
 				}
 				Op::J => {
-					let location = usize::try_from(self.pc.wrapping_add(j.imm_i32() as u32)).unwrap() << 2;
+					let location = self.pc.wrapping_add(j.imm_i32() as usize) << 2;
 					dbg!(self.pc, j.imm_i32(), location);
 					[IrOp::Jump { location }, IrOp::Nop]
 				}
 				Op::Jal => {
-					let location = (self.pc.wrapping_add(i.imm as i16 as u32 + 1) << 2).try_into().unwrap();
-					[IrOp::JumpAndLink { link: i.t.try_into().unwrap(), location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
+					[IrOp::JumpAndLink { link: i.t, location }, IrOp::Nop]
 				}
 				Op::Blez => {
-					let location = (self.pc.wrapping_add(i.imm as i16 as u32 + 1) << 2).try_into().unwrap();
-					[IrOp::JumpIfLessOrEqual { a: i.s.try_into().unwrap(), b: 0, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
+					[IrOp::JumpIfLessOrEqual { a: i.s, b: 0, location }, IrOp::Nop]
 				}
 				Op::Bgtz => {
-					let location = (self.pc.wrapping_add(i.imm as i16 as u32 + 1) << 2).try_into().unwrap();
-					[IrOp::JumpIfGreater { a: i.s.try_into().unwrap(), b: 0, location }, IrOp::Nop]
+					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
+					[IrOp::JumpIfGreater { a: i.s, b: 0, location }, IrOp::Nop]
 				}
 			};
 			dbg!(ops[0]);
