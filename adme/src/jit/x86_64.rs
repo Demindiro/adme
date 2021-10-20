@@ -69,6 +69,21 @@ mod op {
 			self.op32_r2(0x01, a, b);
 		}
 
+		pub(super) fn add_r32_imm(&mut self, dst: Register, imm: isize) {
+			dst.extended().then(|| self.push_u8(0x41));
+			if let Ok(imm) = i8::try_from(imm) {
+				self.push_u8(0x83);
+				self.push_u8(0xc0 | dst.num3());
+				imm.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+			} else if let Ok(imm) = i32::try_from(imm) {
+				self.push_u8(0x81);
+				self.push_u8(0xb0 | dst.num3());
+				imm.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+			} else {
+				panic!("immediate too large");
+			}
+		}
+
 		pub(super) fn add_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
 			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
 			self.op32_m_o8_r(0x01, a, offset, b);
@@ -248,6 +263,10 @@ mod op {
 			assert!(!reg.extended(), "todo");
 			self.push_u8(0x58 | reg.num3());
 		}
+
+		pub(super) fn xor_r32_r32(&mut self, dst: Register, src: Register) {
+			self.op32_r2(0x31, dst, src)
+		}
 	}
 }
 
@@ -321,7 +340,7 @@ impl Jit {
 						);
 						blk.mov_m64_offset_r32(
 							op::Register::DI,
-							isize::from(b) * 4,
+							isize::from(dst) * 4,
 							op::Register::DX,
 						);
 					}
@@ -340,7 +359,17 @@ impl Jit {
 							imm,
 						);
 					} else {
-						todo!("3 operand addi");
+						blk.mov_r32_m64_offset(
+							op::Register::DX,
+							op::Register::DI,
+							isize::from(a) * 4,
+						);
+						blk.add_r32_imm(op::Register::DX, imm);
+						blk.mov_m64_offset_r32(
+							op::Register::DI,
+							isize::from(dst) * 4,
+							op::Register::DX,
+						)
 					}
 				}
 				IrOp::Ori { dst, a, imm } => {
@@ -387,12 +416,17 @@ impl Jit {
 				}
 				IrOp::Syscall => {
 					blk.push_r64(op::Register::DI);
+					blk.mov_r64_r64(op::Register::SI, op::Register::BX);
 					blk.mov_r64_immu(op::Register::DX, syscall_handler as usize);
 					blk.call_r64(op::Register::DX);
 					blk.pop_r64(op::Register::DI);
 				}
 				IrOp::InvalidOp => {
 					blk.ud2();
+				}
+				IrOp::Sli { .. } => {
+					blk.ud2();
+					dbg!("todo: sli");
 				}
 				_ => todo!("{:?}", op),
 			}
@@ -503,6 +537,11 @@ impl Executable {
 			lateout("r14") _,
 			lateout("r15") _,
 		);
+	}
+
+	pub fn dump(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+		out.write_all(&self.mmap)?;
+		out.flush()
 	}
 }
 
