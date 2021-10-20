@@ -390,7 +390,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			PseudoBranch::Blt | PseudoBranch::Bgt => Op::Bne,
 			PseudoBranch::Ble | PseudoBranch::Bge => Op::Beq,
 		};
-		self.push_r(1, a, b, 0, cmp_op)?;
+		self.push_r(a, b, 1, 0, cmp_op)?;
 		self.push_i_label(eq_op, 1, 0, label, 2..18, -1, true)
 	}
 
