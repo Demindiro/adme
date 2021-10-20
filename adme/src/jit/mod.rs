@@ -387,7 +387,7 @@ impl Jit {
 
 		// Link each block to other blocks
 		let mut block_links = Vec::new();
-		for (i, loc) in jump_locations.iter().enumerate() {
+		for (i, loc) in jump_locations.iter().chain(&[self.ir.len() - 1]).enumerate() {
 			dbg!(self.ir[*loc - 1]);
 			match &self.ir[*loc - 1] {
 				IrOp::J { location }
