@@ -274,10 +274,10 @@ impl Jit {
 				}
 				// TODO: check for overflow
 				Op::Addi => {
-					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, None)
+					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as isize) }, None)
 				}
 				Op::Addiu => {
-					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as u32 as isize) }, None)
+					(IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as isize) }, None)
 				}
 				Op::Andi => {
 					(IrOp::Andi { dst: i.t, a: i.s, imm: i.imm.into() }, None)
@@ -295,11 +295,11 @@ impl Jit {
 					(IrOp::Sltiu { dst: i.t, a: i.s, imm: i.imm.into() }, None)
 				}
 				Op::Beq => {
-					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1);
+					let location = self.pc.wrapping_add(i.imm as i16 as usize).wrapping_add(1);
 					(IrOp::Beq { a: i.s, b: i.t, location }, None)
 				}
 				Op::Bne => {
-					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1);
+					let location = self.pc.wrapping_add(i.imm as i16 as usize).wrapping_add(1);
 					(IrOp::Bne { a: i.s, b: i.t, location }, None)
 				}
 				Op::Lui => (IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 }, None),

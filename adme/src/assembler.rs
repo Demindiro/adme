@@ -69,9 +69,9 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_word(i)
 	}
 
-	fn push_i(&mut self, op: Op, s: u32, t: u32, imm: u32) -> Result<'a> {
+	fn push_i(&mut self, op: Op, s: u32, t: u32, imm: i16) -> Result<'a> {
 		self.align_ip();
-		self.push_word((op as u32) << 26 | s << 21 | t << 16 | imm)
+		self.push_word((op as u32) << 26 | s << 21 | t << 16 | u32::from(imm as u16))
 	}
 
 	fn push_i_label(
@@ -149,6 +149,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		let mask = (1 << pending.bits) - 1;
 		let value = (value >> pending.right_shift) & mask;
 		let value = value.wrapping_add(pending.offset as u32);
+		let value = value & mask;
 		self.memory[usize::try_from(pending.location / 4).unwrap()] |= value;
 	}
 
@@ -241,11 +242,11 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_2_regs_1_offset(args: &'a str) -> Result<'a, [u32; 3]> {
+	fn decode_2_regs_1_offset(args: &'a str) -> Result<'a, (u32, u32, i16)> {
 		let mut a = args.split(',');
 		let d = Self::translate_register(a.next().unwrap_or(""))?;
 		let (reg, offt) = Self::decode_reg_offset(a.next().unwrap_or(""))?;
-		Self::ensure_no_args(a, [d, reg, offt])
+		Self::ensure_no_args(a, (d, reg, offt))
 	}
 
 	fn decode_1_reg_1_imm(args: &'a str) -> Result<'a, (u32, &'a str)> {
@@ -259,7 +260,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		Self::ensure_no_args(a, ok)
 	}
 
-	fn decode_reg_offset(arg: &'a str) -> Result<'a, (u32, u32)> {
+	fn decode_reg_offset(arg: &'a str) -> Result<'a, (u32, i16)> {
 		let (offset, reg) = arg.split_once('(').ok_or(AssembleError::ExpectedOffset)?;
 		assert_eq!(reg.chars().last(), Some(')'));
 		Ok((
@@ -291,8 +292,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_arithlogi(&mut self, op: Op, args: &'a str) -> Result<'a> {
 		let (t, s, imm) = Self::decode_2_regs_1_imm(args)?;
-		let imm = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
-		assert!(imm <= u32::from(u16::MAX));
+		let imm: i16 = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
 		self.push_i(op, s, t, imm)
 	}
 
@@ -307,15 +307,13 @@ impl<'a, 'b> Assembler<'a, 'b> {
 	}
 
 	fn parse_loadstore(&mut self, op: Op, args: &'a str) -> Result<'a> {
-		let [t, s, offset] = Self::decode_2_regs_1_offset(args)?;
-		assert!(offset <= u32::from(u16::MAX));
+		let (t, s, offset) = Self::decode_2_regs_1_offset(args)?;
 		self.push_i(op, s, t, offset)
 	}
 
 	fn parse_loadi(&mut self, op: Op, args: &'a str) -> Result<'a> {
 		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
 		let imm = parse_int::parse(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
-		assert!(imm <= u32::from(u16::MAX));
 		self.push_i(op, 0, t, imm)
 	}
 
@@ -360,12 +358,12 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		}
 		let imm = imm as u32;
 		if imm >> 16 != 0 {
-			self.push_i(Op::Lui, 0, t, imm >> 16)?;
+			self.push_i(Op::Lui, 0, t, (imm >> 16) as u16 as i16)?;
 			if imm & 0xffff != 0 {
-				self.push_i(Op::Ori, t, t, imm & 0xffff)?;
+				self.push_i(Op::Ori, t, t, imm as u16 as i16)?;
 			}
 		} else {
-			self.push_i(Op::Ori, 0, t, imm & 0xffff)?;
+			self.push_i(Op::Ori, 0, t, imm as u16 as i16)?;
 		}
 		Ok(())
 	}
@@ -398,8 +396,8 @@ impl<'a, 'b> Assembler<'a, 'b> {
 
 	fn parse_pseudo_abs(&mut self, args: &'a str) -> Result<'a> {
 		let [t, s] = Self::decode_2_regs(args)?;
-		self.push_i(Op::Lui, 0, 1, 0x7fff)?;
-		self.push_i(Op::Ori, 1, 1, 0xffff)?;
+		self.push_i(Op::Lui, 0, 1, i16::MAX)?;
+		self.push_i(Op::Ori, 1, 1, i16::MIN)?;
 		self.push_r(s, 1, t, 0, Function::And)
 	}
 
