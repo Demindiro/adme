@@ -35,6 +35,13 @@ mod op {
 		fn num3(self) -> u8 {
 			(self as u8) & 0b0_111
 		}
+
+		/// The 3-bit opcode for this 8-bit register
+		fn num3b(self, high: bool) -> u8 {
+			let n = self as u8;
+			assert!(n < 4, "todo");
+			n | high.then(|| 0b100).unwrap_or(0)
+		}
 	}
 
 	impl super::Block {
@@ -54,10 +61,22 @@ mod op {
 			self.push_u8(offset as u8);
 		}
 
+		fn op32_m_o32_r(&mut self, op: u8, a: Register, offset: i32, b: Register) {
+			self.push_u8(op);
+			self.push_u8(2 << 6 | b.num3() << 3 | a.num3()); // MOD = 2 | from | to
+			offset.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+		}
+
 		fn op32_r_m_o8(&mut self, op: u8, a: Register, b: Register, offset: i8) {
 			self.push_u8(op | 0b10); // D = 1
 			self.push_u8(1 << 6 | a.num3() << 3 | b.num3()); // MOD = 1 | to | from
 			self.push_u8(offset as u8);
+		}
+
+		fn op32_r_m_o32(&mut self, op: u8, a: Register, b: Register, offset: i32) {
+			self.push_u8(op | 0b10); // D = 1
+			self.push_u8(2 << 6 | a.num3() << 3 | b.num3()); // MOD = 2 | to | from
+			offset.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
 		}
 
 		pub(super) fn add32_r2(&mut self, a: Register, b: Register) {
@@ -127,6 +146,29 @@ mod op {
 			}
 		}
 
+		pub(super) fn or_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
+			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
+			self.op32_m_o8_r(0x09, a, offset, b);
+		}
+
+		pub(super) fn or_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
+			if let Ok(offset) = i8::try_from(offset) {
+				self.op32_r_m_o8(0x09, a, b, offset);
+			} else if let Ok(offset) = i32::try_from(offset) {
+				self.op32_r_m_o32(0x09, a, b, offset);
+			} else {
+				panic!("offset out of range");
+			}
+		}
+
+		pub(super) fn div_m64_offset(&mut self, base: Register, offset: isize) {
+			let offset = i8::try_from(offset).unwrap();
+			base.extended().then(|| self.push_u8(0x41)); // REX.R
+			self.push_u8(0xf7); // DIV
+			self.push_u8(0x70 | base.num3()); // MOD = 0
+			self.push_u8(offset as u8);
+		}
+
 		pub(super) fn cmp32_r2(&mut self, a: Register, b: Register) {
 			self.op32_r2(0x39, a, b);
 		}
@@ -189,8 +231,13 @@ mod op {
 		}
 
 		pub(super) fn mov_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
-			let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-			self.op32_m_o8_r(0x89, a, offset, b);
+			if let Ok(offset) = i8::try_from(offset) {
+				self.op32_m_o8_r(0x89, a, offset, b);
+			} else if let Ok(offset) = i32::try_from(offset) {
+				self.op32_m_o32_r(0x89, a, offset, b);
+			} else {
+				panic!("offset out of range");
+			}
 		}
 
 		pub(super) fn movzx_r8_m64_sib_offset(&mut self, dst: Register, base: Register, index: Register, scale: u8, offset: isize) {
@@ -266,6 +313,18 @@ mod op {
 
 		pub(super) fn xor_r32_r32(&mut self, dst: Register, src: Register) {
 			self.op32_r2(0x31, dst, src)
+		}
+
+		pub(super) fn setl(&mut self, dst: Register, high: bool) {
+			self.push_u8(0x0f); // Expansion prefix
+			self.push_u8(0x9c); // SETL
+			self.push_u8(0xc0 | dst.num3b(high));
+		}
+
+		pub(super) fn setg(&mut self, dst: Register, high: bool) {
+			self.push_u8(0x0f); // Expansion prefix
+			self.push_u8(0x9f); // SETG
+			self.push_u8(0xc0 | dst.num3b(high));
 		}
 	}
 }
@@ -345,6 +404,36 @@ impl Jit {
 						);
 					}
 				}
+				IrOp::Or { dst, a, b } => {
+					if dst == a || dst == b {
+						blk.mov_r32_m64_offset(
+							op::Register::DX,
+							op::Register::DI,
+							isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
+						);
+						blk.or_m64_offset_r32(
+							op::Register::DI,
+							isize::from(dst) * 4,
+							op::Register::DX,
+						);
+					} else {
+						blk.mov_r32_m64_offset(
+							op::Register::DX,
+							op::Register::DI,
+							isize::from(a) * 4,
+						);
+						blk.or_r32_m64_offset(
+							op::Register::DX,
+							op::Register::DI,
+							isize::from(b) * 4,
+						);
+						blk.mov_m64_offset_r32(
+							op::Register::DI,
+							isize::from(dst) * 4,
+							op::Register::DX,
+						);
+					}
+				}
 				IrOp::Addi { dst, a, imm } => {
 					if a == 0 {
 						blk.mov_m64_offset_imm32(
@@ -389,6 +478,28 @@ impl Jit {
 						todo!("todo: non-move ori");
 					}
 				}
+				IrOp::Divu { quot, rem, a, b } => {
+					blk.mov_r32_m64_offset(
+						op::Register::AX,
+						op::Register::DI,
+						isize::from(a) * 4,
+					);
+					blk.xor_r32_r32(op::Register::DX, op::Register::DX);
+					blk.div_m64_offset(
+						op::Register::DI,
+						isize::from(b) * 4,
+					);
+					blk.mov_m64_offset_r32(
+						op::Register::DI,
+						isize::from(quot) * 4,
+						op::Register::AX,
+					);
+					blk.mov_m64_offset_r32(
+						op::Register::DI,
+						isize::from(rem) * 4,
+						op::Register::DX,
+					);
+				}
 				IrOp::Lu8 { reg, mem, offset } => {
 					blk.mov_r32_m64_offset(op::Register::DX, op::Register::DI, isize::from(mem) * 4);
 					blk.movzx_r8_m64_sib_offset(op::Register::DX, op::Register::BX, op::Register::DX, 0, offset);
@@ -428,8 +539,16 @@ impl Jit {
 					blk.ud2();
 					dbg!("todo: sli");
 				}
+				IrOp::Slts { dst, a, b } => {
+					blk.mov_r32_m64_offset(op::Register::AX, op::Register::DI, isize::from(a) * 4);
+					blk.xor_r32_r32(op::Register::DX, op::Register::DX);
+					blk.cmp_r32_m64_offset(op::Register::AX, op::Register::DI, isize::from(b) * 4);
+					blk.setl(op::Register::DX, false);
+					blk.mov_m64_offset_r32(op::Register::DI, isize::from(dst) * 4, op::Register::DX);
+				}
 				_ => todo!("{:?}", op),
 			}
+			blk.push_u8(0x90);
 		}
 		self.blocks.push(blk);
 	}

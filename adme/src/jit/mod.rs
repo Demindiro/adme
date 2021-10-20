@@ -48,22 +48,26 @@ enum IrOp {
 		b: u8,
 	},
 	Mulu {
-		dst: u8,
+		hi: u8,
+		lo: u8,
 		a: u8,
 		b: u8,
 	},
 	Muls {
-		dst: u8,
+		hi: u8,
+		lo: u8,
 		a: u8,
 		b: u8,
 	},
 	Divu {
-		dst: u8,
+		quot: u8,
+		rem: u8,
 		a: u8,
 		b: u8,
 	},
 	Divs {
-		dst: u8,
+		quot: u8,
+		rem: u8,
 		a: u8,
 		b: u8,
 	},
@@ -241,36 +245,37 @@ impl Jit {
 			let i = I::decode(instr);
 			let j = J::decode(instr);
 			let ops = match op {
-				Op::Function => match dbg!(Function::try_from(instr).unwrap()) {
+				Op::Function => match Function::try_from(instr) {
 					// TODO check for overflow
-					Function::Add => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Addu => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Add) => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Addu) => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
 					// TODO check for overflow
-					Function::Sub => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Subu => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Mult => (IrOp::Muls { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Multu => (IrOp::Mulu { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Div => (IrOp::Divs { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Divu => (IrOp::Divu { dst: r.d, a: r.s, b: r.t }, None),
-					Function::And => (IrOp::And { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Or => (IrOp::Or { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Xor => (IrOp::Xor { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Nor => (IrOp::Nor { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Sll => (IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, None),
-					Function::Srl => (IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, None),
-					Function::Sra => (IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, None),
-					Function::Sllv => (IrOp::Sl { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Srlv => (IrOp::Srl { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Srav => (IrOp::Sra { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Jr => (IrOp::Jr { register: r.s }, None),
-					Function::Jalr => (IrOp::Jalr { link: r.t, register: r.s }, None),
-					Function::Mfhi => (IrOp::Or { dst: r.d, a: 0, b: 32 }, None),
-					Function::Mflo => (IrOp::Or { dst: r.d, a: 0, b: 33 }, None),
-					Function::Mthi => (IrOp::Or { dst: 32, a: 0, b: r.d }, None),
-					Function::Mtlo => (IrOp::Or { dst: 33, a: 0, b: r.d }, None),
-					Function::Slt => (IrOp::Slts { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Sltu => (IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, None),
-					Function::Syscall => (IrOp::Syscall, None),
+					Ok(Function::Sub) => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Subu) => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Mult) => (IrOp::Muls { hi: 33, lo: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Multu) => (IrOp::Mulu { hi: 33, lo: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Div) => (IrOp::Divs { rem: 33, quot: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Divu) => (IrOp::Divu { rem: 33, quot: 32, a: r.s, b: r.t }, None),
+					Ok(Function::And) => (IrOp::And { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Or) => (IrOp::Or { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Xor) => (IrOp::Xor { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Nor) => (IrOp::Nor { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Sll) => (IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Srl) => (IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Sra) => (IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Sllv) => (IrOp::Sl { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Srlv) => (IrOp::Srl { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Srav) => (IrOp::Sra { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Jr) => (IrOp::Jr { register: r.s }, None),
+					Ok(Function::Jalr) => (IrOp::Jalr { link: r.t, register: r.s }, None),
+					Ok(Function::Mflo) => (IrOp::Or { dst: r.d, a: 0, b: 32 }, None),
+					Ok(Function::Mfhi) => (IrOp::Or { dst: r.d, a: 0, b: 33 }, None),
+					Ok(Function::Mtlo) => (IrOp::Or { dst: 32, a: 0, b: r.d }, None),
+					Ok(Function::Mthi) => (IrOp::Or { dst: 33, a: 0, b: r.d }, None),
+					Ok(Function::Slt) => (IrOp::Slts { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Sltu) => (IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Syscall) => (IrOp::Syscall, None),
+					Err(_) => (IrOp::InvalidOp, None),
 				}
 				// TODO: check for overflow
 				Op::Addi => {
@@ -443,8 +448,8 @@ impl Jit {
 #[repr(C)]
 pub struct Registers {
 	pub gp: [u32; 32],
-	hi: u32,
 	lo: u32,
+	hi: u32,
 	pc: u32,
 }
 
