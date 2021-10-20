@@ -81,7 +81,21 @@ fn main() {
 
 	// JIT test
 	{
-		let mut jit = adme::Jit::new(0);
+		extern "C" fn syscall(regs: &mut adme::Registers) {
+			let _ = std::panic::catch_unwind(|| {
+				match regs.gp[adme::Registers::V0] {
+					10 => std::process::exit(0), // exit
+					11 => { // print_char
+						use std::io::Write;
+						std::io::stdout().write_all(&[regs.gp[adme::Registers::A0] as u8]).unwrap();
+						std::io::stdout().flush().unwrap();
+					}
+					s => eprintln!("invalid syscall: {}", s),
+				}
+			});
+		}
+
+		let mut jit = adme::Jit::new(0, syscall);
 		mem.mem.iter().take_while(|c| **c != 0).for_each(|c| jit.push(*c));
 		let exec = jit.finish();
 		let mut regs = adme::Registers::new();

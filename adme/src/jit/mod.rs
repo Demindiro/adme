@@ -211,6 +211,7 @@ enum IrOp {
 		mem: u8,
 		offset: isize,
 	},
+	Syscall,
 	InvalidOp,
 }
 
@@ -225,11 +226,12 @@ pub struct Jit {
 	ir: Vec<IrOp>,
 	pc: usize,
 	address_map: Vec<usize>,
+	syscall_handler: extern "C" fn(&mut Registers),
 }
 
 impl Jit {
-	pub fn new(pc: usize) -> Self {
-		Self { ir: Vec::new(), pc, address_map: Vec::new() }
+	pub fn new(pc: usize, syscall_handler: extern "C" fn(&mut Registers)) -> Self {
+		Self { ir: Vec::new(), pc, address_map: Vec::new(), syscall_handler }
 	}
 
 	pub fn push(&mut self, instr: u32) {
@@ -268,6 +270,7 @@ impl Jit {
 					Function::Mtlo => (IrOp::Or { dst: 33, a: 0, b: r.d }, None),
 					Function::Slt => (IrOp::Slts { dst: r.d, a: r.s, b: r.t }, None),
 					Function::Sltu => (IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, None),
+					Function::Syscall => (IrOp::Syscall, None),
 				}
 				// TODO: check for overflow
 				Op::Addi => {
@@ -425,13 +428,11 @@ impl Jit {
 		let mut prev_split = 0;
 		for split in jump_locations {
 			let block = &self.ir[prev_split..split];
-			if !block.is_empty() {
-				host_jit.compile(block);
-				prev_split = split;
-			}
+			host_jit.compile(block, self.syscall_handler);
+			prev_split = split;
 		}
 		let block = &self.ir[prev_split..];
-		(!block.is_empty()).then(|| host_jit.compile(block));
+		host_jit.compile(block, self.syscall_handler);
 
 		// Link all blocks together
 		host_jit.link(&block_links)
@@ -440,7 +441,7 @@ impl Jit {
 
 #[repr(C)]
 pub struct Registers {
-	gp: [u32; 32],
+	pub gp: [u32; 32],
 	hi: u32,
 	lo: u32,
 	pc: u32,
@@ -450,6 +451,14 @@ impl Registers {
 	const OFFSET_HI: u8 = 32;
 	const OFFSET_LO: u8 = 33;
 	const OFFSET_PC: u8 = 34;
+
+	pub const V0: usize = 2;
+	pub const V1: usize = 3;
+
+	pub const A0: usize = 4;
+	pub const A1: usize = 5;
+	pub const A2: usize = 6;
+	pub const A3: usize = 7;
 
 	pub fn new() -> Self {
 		Self {

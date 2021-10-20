@@ -348,6 +348,10 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_r(s, 0, 0, 0, function)
 	}
 
+	fn parse_syscall(&mut self) -> Result<'a> {
+		self.push_r(0, 0, 0, 0, Function::Syscall)
+	}
+
 	fn parse_pseudo_li(&mut self, args: &'a str) -> Result<'a> {
 		let (t, imm) = Self::decode_1_reg_1_imm(args)?;
 		let imm = parse_int::parse::<i64>(imm).map_err(|_| AssembleError::ExpectedImmediate)?;
@@ -443,7 +447,7 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			let line = line.trim();
 
 			// Get the mnemonic
-			// If this fails, the line is either empty or a label (or invalid)
+			// If this fails, the line is either empty or a label (or syscall/invalid)
 			if let Some((mnem, args)) = line.trim().split_once(char::is_whitespace) {
 				match mnem {
 					"abs" => slf.parse_pseudo_abs(args),
@@ -516,6 +520,8 @@ impl<'a, 'b> Assembler<'a, 'b> {
 			} else if line.chars().last() == Some(':') {
 				let l = core::str::from_utf8(&line.as_bytes()[..line.len() - 1]).unwrap();
 				slf.insert_label(l);
+			} else if line == "syscall" {
+				slf.parse_syscall()?;
 			} else if !line.is_empty() {
 				return Err(AssembleError::InvalidLine(line));
 			}

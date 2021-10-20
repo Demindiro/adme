@@ -72,6 +72,8 @@ op! {
 	Jr = 8,
 	Jalr = 9,
 
+	Syscall = 12,
+
 	Mfhi = 16,
 	Mthi = 17,
 	Mflo = 18,
@@ -187,6 +189,8 @@ impl Cpu {
 					Function::Mflo => self.gp[r_d] = self.lo,
 					Function::Mthi => self.hi = self.gp[r_s],
 					Function::Mtlo => self.lo = self.gp[r_s],
+					
+					Function::Syscall => todo!(),
 				}
 			}
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,

@@ -122,10 +122,29 @@ mod op {
 			self.op32_m_o8_r(0x3b, b, offset, a);
 		}
 
+		pub(super) fn mov_r64_r64(&mut self, dst: Register, src: Register) {
+			assert!(!dst.extended(), "todo: extended registers");
+			self.push_u8(0x48); // REX.W
+			self.push_u8(0x89); // MOV
+			self.push_u8(3 << 6 | src.num3() << 3 | dst.num3()); // MOD = 3
+		}
+
 		pub(super) fn mov_r32_imm32(&mut self, dst: Register, num: u32) {
 			assert!(!dst.extended(), "todo: extended registers");
 			self.push_u8(0xb8 | dst.num3());
 			num.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+		}
+
+		pub(super) fn mov_r64_immu(&mut self, dst: Register, num: usize) {
+			assert!(!dst.extended(), "todo: extended registers");
+			if let Ok(num) = u32::try_from(num) {
+				self.push_u8(0xb8 | dst.num3());
+				num.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+			} else {
+				self.push_u8(0x48); // REX.W
+				self.push_u8(0xb8 | dst.num3());
+				num.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+			}
 		}
 
 		pub(super) fn mov_m64_r32(&mut self, dst: Register, src: Register) {
@@ -209,6 +228,12 @@ mod op {
 			self.push_u8(0xe0 | to.num3()); // ??? | to
 		}
 
+		pub(super) fn call_r64(&mut self, to: Register) {
+			to.extended().then(|| self.push_u8(0x41)); // ???
+			self.push_u8(0xff); // ???
+			self.push_u8(0xd0 | to.num3()); // CALL | fn
+		}
+
 		pub(super) fn ret(&mut self) {
 			self.push_u8(0xc3);
 		}
@@ -216,6 +241,16 @@ mod op {
 		pub(super) fn ud2(&mut self) {
 			self.push_u8(0x0f);
 			self.push_u8(0x0b);
+		}
+
+		pub(super) fn push_r64(&mut self, reg: Register) {
+			assert!(!reg.extended(), "todo");
+			self.push_u8(0x50 | reg.num3());
+		}
+
+		pub(super) fn pop_r64(&mut self, reg: Register) {
+			assert!(!reg.extended(), "todo");
+			self.push_u8(0x58 | reg.num3());
 		}
 	}
 }
@@ -260,7 +295,7 @@ impl Jit {
 	}
 
 	/// Translate a single block
-	pub(super) fn compile(&mut self, ir: &[IrOp]) {
+	pub(super) fn compile(&mut self, ir: &[IrOp], syscall_handler: extern "C" fn(&mut crate::Registers)) {
 		dbg!(ir);
 		let mut blk = Block::new();
 		for op in ir {
@@ -353,6 +388,17 @@ impl Jit {
 					// Return to caller to let it handle an arbitrary jump
 					blk.mov_r32_m64_offset(op::Register::AX, op::Register::SI, isize::from(register) * 4);
 					blk.ret();
+				}
+				IrOp::Syscall => {
+					blk.push_r64(op::Register::SI);
+					blk.push_r64(op::Register::DI);
+					blk.push_r64(op::Register::DX);
+					blk.mov_r64_r64(op::Register::DI, op::Register::SI);
+					blk.mov_r64_immu(op::Register::BX, syscall_handler as usize);
+					blk.call_r64(op::Register::BX);
+					blk.pop_r64(op::Register::DX);
+					blk.pop_r64(op::Register::DI);
+					blk.pop_r64(op::Register::SI);
 				}
 				IrOp::InvalidOp => {
 					blk.ud2();
