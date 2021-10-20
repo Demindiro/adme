@@ -231,14 +231,14 @@ enum BlockJumpCondition {
 	Greater,
 }
 
-struct BlockJump {
+struct BlockJ {
 	location: usize,
 	condition: BlockJumpCondition,
 }
 
 struct Block {
 	code: Vec<u8>,
-	jump: Option<BlockJump>,
+	jump: Option<BlockJ>,
 }
 
 impl Block {
@@ -353,7 +353,7 @@ impl Jit {
 				blk.push_u8(0x90); // NOP
 				//todo!();
 			}
-			IrOp::Jump { location } => {
+			IrOp::J { location } => {
 				dbg!(&self.address_map, location / 4);
 				if let Some(&(loc_blk, loc_ip, _)) = self.address_map.get(location / 4) {
 					dbg!(loc_ip);
@@ -372,7 +372,7 @@ impl Jit {
 					blk.jmp(offset);
 				} else {
 					todo!();
-					blk.jump = Some(BlockJump {
+					blk.jump = Some(BlockJ {
 						location,
 						condition: BlockJumpCondition::Always,
 					});
@@ -381,7 +381,7 @@ impl Jit {
 					blk = &mut self.blocks[blk_i];
 				}
 			}
-			IrOp::JumpIfEqual { a, b, location } => {
+			IrOp::Beq { a, b, location } => {
 				assert_eq!(location & 0x3, 0, "bad alignment");
 				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
 				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
@@ -390,7 +390,7 @@ impl Jit {
 					let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.len()) as isize;
 					blk.jnz(offset);
 				} else {
-					blk.jump = Some(BlockJump {
+					blk.jump = Some(BlockJ {
 						location,
 						condition: BlockJumpCondition::Equal,
 					});
@@ -400,7 +400,7 @@ impl Jit {
 					blk = &mut self.blocks[i];
 				}
 			}
-			IrOp::JumpIfNotEqual { a, b, location } => {
+			IrOp::Bne { a, b, location } => {
 				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
 				blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
 				assert_eq!(location & 0x3, 0, "bad alignment");
@@ -409,7 +409,7 @@ impl Jit {
 				let offset = usize::try_from(loc_ip).unwrap().wrapping_sub(blk.code.len()) as isize;
 				blk.jnz(offset);
 			}
-			IrOp::JumpRegister { register } => {
+			IrOp::Jr { register } => {
 				blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(register) * 4);
 				blk.add_r64_r64(op::Register::BX, op::Register::DI);
 				blk.jmp_r64(op::Register::BX);

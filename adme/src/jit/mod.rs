@@ -128,36 +128,36 @@ enum IrOp {
 		a: u8,
 		imm: usize,
 	},
-	Jump {
+	J {
 		location: usize,
 	},
-	JumpAndLink {
+	Jal {
 		link: u8,
 		location: usize,
 	},
-	JumpRegister {
+	Jr {
 		register: u8,
 	},
-	JumpAndLinkRegister {
+	Jalr {
 		link: u8,
 		register: u8,
 	},
-	JumpIfLessOrEqual {
+	Ble {
 		a: u8,
 		b: u8,
 		location: usize,
 	},
-	JumpIfGreater {
+	Bgt {
 		a: u8,
 		b: u8,
 		location: usize,
 	},
-	JumpIfEqual {
+	Beq {
 		a: u8,
 		b: u8,
 		location: usize,
 	},
-	JumpIfNotEqual {
+	Bne {
 		a: u8,
 		b: u8,
 		location: usize,
@@ -244,8 +244,8 @@ impl Jit {
 					Function::Sllv => [IrOp::Sl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
 					Function::Srlv => [IrOp::Srl { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
 					Function::Srav => [IrOp::Sra { dst: r.d, a: r.s, b: r.t }, IrOp::Nop],
-					Function::Jr => [IrOp::JumpRegister { register: r.s }, IrOp::Nop],
-					Function::Jalr => [IrOp::JumpAndLinkRegister { link: r.t, register: r.s }, IrOp::Nop],
+					Function::Jr => [IrOp::Jr { register: r.s }, IrOp::Nop],
+					Function::Jalr => [IrOp::Jalr { link: r.t, register: r.s }, IrOp::Nop],
 					Function::Mfhi => [IrOp::Or { dst: r.d, a: 0, b: 32 }, IrOp::Nop],
 					Function::Mflo => [IrOp::Or { dst: r.d, a: 0, b: 33 }, IrOp::Nop],
 					Function::Mthi => [IrOp::Or { dst: 32, a: 0, b: r.d }, IrOp::Nop],
@@ -277,11 +277,11 @@ impl Jit {
 				}
 				Op::Beq => {
 					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
-					[IrOp::JumpIfEqual { a: i.s, b: i.t, location }, IrOp::Nop]
+					[IrOp::Beq { a: i.s, b: i.t, location }, IrOp::Nop]
 				}
 				Op::Bne => {
 					let location = self.pc.wrapping_add(i.imm as i16 as usize + 1) << 2;
-					[IrOp::JumpIfNotEqual { a: i.s, b: i.t, location }, IrOp::Nop]
+					[IrOp::Bne { a: i.s, b: i.t, location }, IrOp::Nop]
 				}
 				Op::Lui => [IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 }, IrOp::Nop],
 				Op::Lhi => [
@@ -319,19 +319,19 @@ impl Jit {
 				Op::J => {
 					let location = self.pc.wrapping_add(j.imm_i32() as usize) << 2;
 					dbg!(self.pc, j.imm_i32(), location);
-					[IrOp::Jump { location }, IrOp::Nop]
+					[IrOp::J { location }, IrOp::Nop]
 				}
 				Op::Jal => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::JumpAndLink { link: i.t, location }, IrOp::Nop]
+					[IrOp::Jal { link: i.t, location }, IrOp::Nop]
 				}
 				Op::Blez => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::JumpIfLessOrEqual { a: i.s, b: 0, location }, IrOp::Nop]
+					[IrOp::Ble { a: i.s, b: 0, location }, IrOp::Nop]
 				}
 				Op::Bgtz => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1) << 2;
-					[IrOp::JumpIfGreater { a: i.s, b: 0, location }, IrOp::Nop]
+					[IrOp::Bgt { a: i.s, b: 0, location }, IrOp::Nop]
 				}
 			};
 			dbg!(ops[0]);
