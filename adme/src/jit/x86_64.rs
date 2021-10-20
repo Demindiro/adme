@@ -303,43 +303,43 @@ impl Jit {
 				IrOp::Add { dst, a, b } => {
 					if dst == a || dst == b {
 						blk.mov_r32_m64_offset(
-							op::Register::BX,
-							op::Register::SI,
+							op::Register::DX,
+							op::Register::DI,
 							isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
 						);
 						blk.add_m64_offset_r32(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(dst) * 4,
-							op::Register::BX,
+							op::Register::DX,
 						);
 					} else {
 						blk.mov_r32_m64_offset(
-							op::Register::BX,
-							op::Register::SI,
+							op::Register::DX,
+							op::Register::DI,
 							isize::from(a) * 4,
 						);
 						blk.add_r32_m64_offset(
-							op::Register::BX,
-							op::Register::SI,
+							op::Register::DX,
+							op::Register::DI,
 							isize::from(b) * 4,
 						);
 						blk.mov_m64_offset_r32(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(b) * 4,
-							op::Register::BX,
+							op::Register::DX,
 						);
 					}
 				}
 				IrOp::Addi { dst, a, imm } => {
 					if a == 0 {
 						blk.mov_m64_offset_imm(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(dst) * 4,
 							imm as usize,
 						)
 					} else if dst == a {
 						blk.add_m64_32_offset_imm(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(dst) * 4,
 							imm,
 						);
@@ -350,13 +350,13 @@ impl Jit {
 				IrOp::Ori { dst, a, imm } => {
 					if a == 0 {
 						blk.mov_m64_offset_imm(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(dst) * 4,
 							imm as usize,
 						)
 					} else if dst == a {
 						blk.or_m64_offset_imm(
-							op::Register::SI,
+							op::Register::DI,
 							isize::from(dst) * 4,
 							imm as usize,
 						)
@@ -365,9 +365,9 @@ impl Jit {
 					}
 				}
 				IrOp::Lu8 { reg, mem, offset } => {
-					blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(mem) * 4);
-					blk.movzx_r8_m64_sib_offset(op::Register::BX, op::Register::DX, op::Register::BX, 0, offset);
-					blk.mov_m64_offset_r32(op::Register::SI, isize::from(reg) * 4, op::Register::BX);
+					blk.mov_r32_m64_offset(op::Register::DX, op::Register::DI, isize::from(mem) * 4);
+					blk.movzx_r8_m64_sib_offset(op::Register::DX, op::Register::BX, op::Register::DX, 0, offset);
+					blk.mov_m64_offset_r32(op::Register::DI, isize::from(reg) * 4, op::Register::DX);
 				}
 				IrOp::S8 { reg, mem, offset } => {
 					blk.push_u8(0x90); // NOP
@@ -376,8 +376,8 @@ impl Jit {
 				IrOp::J { .. } => (), // Nothing to do until link time
 				IrOp::Beq { a, b, .. } | IrOp::Bne { a, b, .. } => {
 					// Insert comparison instruction, wait with jump op until link time
-					blk.mov_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(a) * 4);
-					blk.cmp_r32_m64_offset(op::Register::BX, op::Register::SI, isize::from(b) * 4);
+					blk.mov_r32_m64_offset(op::Register::DX, op::Register::DI, isize::from(a) * 4);
+					blk.cmp_r32_m64_offset(op::Register::DX, op::Register::DI, isize::from(b) * 4);
 					blk.jump_condition = Some(match *op {
 						IrOp::Beq { .. } => BlockJump::Equal,
 						IrOp::Bne { .. } => BlockJump::NotEqual,
@@ -386,19 +386,14 @@ impl Jit {
 				}
 				IrOp::Jr { register } => {
 					// Return to caller to let it handle an arbitrary jump
-					blk.mov_r32_m64_offset(op::Register::AX, op::Register::SI, isize::from(register) * 4);
+					blk.mov_r32_m64_offset(op::Register::AX, op::Register::DI, isize::from(register) * 4);
 					blk.ret();
 				}
 				IrOp::Syscall => {
-					blk.push_r64(op::Register::SI);
 					blk.push_r64(op::Register::DI);
-					blk.push_r64(op::Register::DX);
-					blk.mov_r64_r64(op::Register::DI, op::Register::SI);
-					blk.mov_r64_immu(op::Register::BX, syscall_handler as usize);
-					blk.call_r64(op::Register::BX);
-					blk.pop_r64(op::Register::DX);
+					blk.mov_r64_immu(op::Register::DX, syscall_handler as usize);
+					blk.call_r64(op::Register::DX);
 					blk.pop_r64(op::Register::DI);
-					blk.pop_r64(op::Register::SI);
 				}
 				IrOp::InvalidOp => {
 					blk.ud2();
@@ -485,19 +480,19 @@ impl Executable {
 		asm!(
 			"
 				push	rbx
-				push	rbp
+				push	rbx		# FIXME it seems Rust doesn't properly align the stack?
 
-				mov		rbx, rdi
-				inc		rbx			# Skip ret at start
+				mov		rbx, rax
+				inc		rsi			# Skip ret at start
 			break_on_me:
-				call	rbx
+				call	rsi
 
-				pop		rbp
+				pop		rbx
 				pop		rbx
 			",
-			in("rdi") self.mmap.as_ptr(),
-			in("rsi") registers,
-			in("rdx") memory,
+			in("rsi") self.mmap.as_ptr(),
+			in("rdi") registers,
+			in("rax") memory,
 			lateout("rax") _,
 			lateout("rcx") _,
 			lateout("rdx") _,
