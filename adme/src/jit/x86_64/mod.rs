@@ -64,7 +64,7 @@ impl Jit {
 								dst: op::Register::DI,
 								disp: i32::from(dst) * 4,
 								src: op::Register::DX,
-							}
+							}.optimize()
 						);
 					} else {
 						blk.mov_r32_m64_offset(
@@ -78,7 +78,7 @@ impl Jit {
 								dst: op::Register::DX,
 								src: op::Register::DI,
 								disp: i32::from(b) * 4,
-							}
+							}.optimize()
 						);
 						blk.mov_m64_offset_r32(
 							op::Register::DI,

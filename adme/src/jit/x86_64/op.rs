@@ -170,6 +170,19 @@ impl ModRegMR {
 			| Self::Disp32Reg { .. } => todo!(),
 		}
 	}
+
+	pub fn optimize(self) -> Self {
+		match self {
+			Self::RegRel32 { dst, src, disp } => if let Ok(disp) = i8::try_from(disp) {
+				return Self::RegRel8 { dst, src, disp }.optimize();
+			}
+			Self::Rel32Reg { dst, src, disp } => if let Ok(disp) = i8::try_from(disp) {
+				return Self::Rel8Reg { dst, src, disp }.optimize();
+			}
+			_ => (),
+		}
+		self
+	}
 }
 
 #[derive(Clone, Copy, Debug)]
