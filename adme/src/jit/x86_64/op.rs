@@ -38,6 +38,149 @@ impl Register {
 	}
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Op {
+	Mov,
+	Add,
+	Sub,
+	Or,
+	Xor,
+	Div,
+	Jmp,
+	Jcc(Cc),
+	Syscall,
+	Ud2,
+	Setcc(Cc),
+}
+
+macro_rules! enc {
+	($fn:ident [$($op:ident),*]) => {
+		fn $fn(self) -> bool {
+			match self {
+				$(Op::$op)|* => true,
+				_ => false,
+			}
+		}
+	};
+}
+
+impl Op {
+	enc!(accepts_mr [Mov, Add, Sub, Or, Xor]);
+	enc!(accepts_rm [Mov, Add, Sub, Or, Xor]);
+	enc!(accepts_mi [Mov, Add, Sub, Or, Xor]);
+	enc!(accepts_i [Add, Sub, Or, Xor]);
+	enc!(accepts_m_r [Div, Jmp]);
+	enc!(accepts_fd [Mov]);
+	enc!(accepts_td [Mov]);
+	enc!(accepts_oi [Mov]);
+	enc!(accepts_zo [Ud2, Syscall]);
+
+	fn accepts_m_w(self) -> bool {
+		match self {
+			Op::Setcc(_) => true,
+			_ => false,
+		}
+	}
+
+	fn accepts_d(self) -> bool {
+		match self {
+			Op::Jmp | Op::Jcc(_) => true,
+			_ => false,
+		}
+	}
+
+	fn encode(self, out: &mut [u8; 2]) -> &mut [u8] {
+		todo!()
+	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Cc {
+	Z,
+	NZ,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Prefix {
+	Rex(Rex),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Rex {
+	W,
+	R,
+	WR,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Sib {
+
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Parameters {
+	ModRegMR {
+		src: Register,
+		dst: Register,
+	}
+	ModRegRM {
+
+	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Size {
+	Byte,
+	Word,
+	Dword,
+	Qword,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Argument {
+	Register { reg: Register },
+	Immediate { imm: isize },
+	Memory { base: Register },
+	MemoryOffset { base: Register, offset: isize },
+	MemoryIndex { base: Register, index: Register, scale: u8 },
+	MemoryIndexOffset { base: Register, index: Register, scale: u8, offset: isize },
+}
+
+pub struct Instruction {
+	prefixes: [Option<Prefix>; 4],
+	op: Op,
+	sib: Option<Sib>,
+	params: Option<Parameters>,
+}
+
+impl Instruction {
+	pub fn new(op: Op) -> Self {
+		Self { prefixes: [None; 4], op, sib: None, arguments: None }
+	}
+
+	pub fn set_source(&mut self, source: Argument) -> &mut Self {
+		match source {
+			Argument::Register { .. } => {
+				assert!(self.op.accepts_rm() || self.op.accepts_m());
+			}
+		}
+		self.so
+		self
+	}
+
+	pub fn set_destination(&mut self, destination: Argument) -> &mut Self {
+		todo!()
+	}
+
+	pub fn add_prefix(&mut self, prefix: Prefix) -> &mut Self {
+		todo!()
+	}
+
+	pub fn build(&mut self, mut push: impl FnMut(u8)) -> &[u8] {
+		todo!()
+	}
+}
+
 impl super::Block {
 	fn op32_r2(&mut self, op: u8, a: Register, b: Register) {
 		self.push_u8(op);
