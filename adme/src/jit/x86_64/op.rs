@@ -1,6 +1,6 @@
 //! List of opcodes and functions to generate them.
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Register {
 	AX = 0b0_000,
 	BX = 0b0_011,
@@ -38,6 +38,157 @@ impl Register {
 	}
 }
 
+/// mod-reg-r/m encoding for instructions that support it.
+///
+/// Based on http://www.c-jump.com/CIS77/CPU/x86/lecture.html
+#[derive(Clone, Copy, Debug)]
+pub enum ModRegMR {
+	/// SIB without base (d = 1, m = 0)
+	RegScale { dst: Register, src: Register, scale: Scale, disp: i32 },
+	/// SIB without base (d = 0, m = 0)
+	ScaleReg { dst: Register, src: Register, scale: Scale, disp: i32 },
+
+	/// SIB without base (d = 1, m = 0)
+	RegIndex { dst: Register, src: Register, index: Register, scale: Scale },
+	/// SIB without base (d = 0, m = 0)
+	IndexReg { dst: Register, src: Register, index: Register, scale: Scale },
+
+	/// SIB with base (d = 1, m = 0)
+	RegIndex8 { dst: Register, src: Register, index: Register, scale: Scale, disp: i8 },
+	/// SIB with base (d = 0, m = 0)
+	Index8Reg { dst: Register, src: Register, index: Register, scale: Scale, disp: i8 },
+
+	/// SIB with base (d = 1, m = 0)
+	RegIndex32 { dst: Register, src: Register, index: Register, scale: Scale, disp: i32 },
+	/// SIB with base (d = 0, m = 0)
+	Index32Reg { dst: Register, src: Register, index: Register, scale: Scale, disp: i32 },
+
+	/// i8 offset (d = 1, m = 0)
+	RegRel8 { dst: Register, src: Register, disp: i8 },
+	/// i8 offset (d = 0, m = 0)
+	Rel8Reg { dst: Register, disp: i8, src: Register },
+
+	/// Direct memory addressing (d = 1, m = 0)
+	RegMem { dst: Register, src: Register },
+	/// Direct memory addressing (d = 0, m = 0)
+	MemReg { dst: Register, src: Register },
+
+	/// i32 offset (d = 1, m = 0)
+	RegRel32 { dst: Register, src: Register, disp: i32 },
+	/// i32 offset (d = 0, m = 0)
+	Rel32Reg { dst: Register, disp: i32, src: Register },
+
+	/// u8 displacement (d = 1, m = 1)
+	RegDisp8 { dst: Register, src: Register, disp: u8 },
+	/// u8 displacement (d = 0, m = 1)
+	Disp8Reg { dst: Register, src: Register, disp: u8 },
+
+	/// u32 displacement (d = 1, m = 2)
+	RegDisp32 { dst: Register, src: Register, disp: u32 },
+	/// u32 displacement (d = 0, m = 2)
+	Disp32Reg { dst: Register, index: Register, disp: u32 },
+
+	/// Register addressing mode (d = 1, m = 3)
+	RegReg { src: Register, dst: Register },
+}
+
+impl ModRegMR {
+	fn encode(self, mut op: &mut [u8], size: Size, mut push: impl FnMut(u8)) {
+		// Encode op
+		let op_l = op.last_mut().expect("op cannot be empty");
+		assert_eq!(*op_l & 3, 0, "op[0:1] are used for s and d");
+		match size {
+			Size::B => todo!("account for overlap between [abcd]h and si/di/ps/bs"),
+			Size::W => push(0x66), // Operand size prefix
+			Size::DW => *op_l |= 1, // s = 1
+			Size::QW => {
+				push(0x48); // REX.W
+				*op_l |= 1; // s = 1
+			}
+		}
+		*op_l |= match self {
+			Self::ScaleReg { .. }
+			| Self::Index8Reg { .. }
+			| Self::Index32Reg { .. }
+			| Self::Disp8Reg { .. }
+			| Self::Disp32Reg { .. }
+			| Self::MemReg { .. }
+			| Self::Rel8Reg { .. }
+			| Self::Rel32Reg { .. } => 0, // d = 0
+			_ => 2, // d = 1
+		};
+		op.iter().copied().for_each(&mut push);
+
+		// Encode args
+		match self {
+			Self::RegScale { dst: r, src: m, scale, disp }
+			| Self::ScaleReg { dst: m, src: r, scale, disp } => {
+				push(0 << 6 | r.num3() << 3 | 0b100);
+				push((scale as u8) << 6 | m.num3() << 3 | 0b101);
+				disp.to_le_bytes().iter().copied().for_each(push);
+			}
+			Self::RegIndex { dst: r, src: m, index, scale }
+			| Self::IndexReg { dst: m, src: r, index, scale } => {
+				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | r.num3() << 3 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
+			}
+			Self::RegIndex8 { dst: r, src: m, index, scale, disp }
+			| Self::Index8Reg { dst: m, src: r, index, scale, disp } => {
+				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | r.num3() << 3 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
+				disp.to_le_bytes().iter().copied().for_each(push);
+			}
+			Self::RegIndex32 { dst: r, src: m, index, scale, disp }
+			| Self::Index32Reg { dst: m, src: r, index, scale, disp } => {
+				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | r.num3() << 3 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
+				disp.to_le_bytes().iter().copied().for_each(push);
+			}
+			Self::RegMem { dst: r, src: m } | Self::MemReg { dst: m, src: r} => {
+				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+				push(0 << 6 | r.num3() << 3 | m.num3());
+			}
+			Self::RegRel8 { dst: r, src: m, disp } | Self::Rel8Reg { dst: m, src: r, disp } => {
+				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+				push(1 << 6 | r.num3() << 3 | m.num3());
+				disp.to_le_bytes().iter().copied().for_each(push);
+			}
+			Self::RegRel32 { dst: r, src: m, disp } | Self::Rel32Reg { dst: m, src: r, disp } => {
+				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+				push(2 << 6 | r.num3() << 3 | m.num3());
+				disp.to_le_bytes().iter().copied().for_each(push);
+			}
+			Self::RegReg { dst, src } => {
+				push(3 << 6 | dst.num3() << 3 | src.num3());
+			}
+			Self::RegDisp8 { .. }
+			| Self::Disp8Reg { .. }
+			| Self::RegDisp32 { .. }
+			| Self::Disp32Reg { .. } => todo!(),
+		}
+	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Scale {
+	_1 = 0,
+	_2 = 1,
+	_4 = 2,
+	_8 = 3,
+}
+
+/// The size of the operands an instruction operates on.
+#[derive(Clone, Copy, Debug)]
+pub enum Size {
+	B,
+	W,
+	DW,
+	QW,
+}
+
 impl super::Block {
 	fn op32_r2(&mut self, op: u8, a: Register, b: Register) {
 		self.push_u8(op);
@@ -71,6 +222,10 @@ impl super::Block {
 		self.push_u8(op | 0b10); // D = 1
 		self.push_u8(2 << 6 | a.num3() << 3 | b.num3()); // MOD = 2 | to | from
 		offset.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+	}
+
+	pub(super) fn add(&mut self, size: Size, args: ModRegMR) {
+		args.encode(&mut [0o00], size, |b| self.push_u8(b));
 	}
 
 	pub(super) fn add32_r2(&mut self, a: Register, b: Register) {

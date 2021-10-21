@@ -56,12 +56,15 @@ impl Jit {
 						blk.mov_r32_m64_offset(
 							op::Register::DX,
 							op::Register::DI,
-							isize::from((dst == a).then(|| a).unwrap_or(b)) * 4,
+							isize::from((dst == a).then(|| b).unwrap_or(a)) * 4,
 						);
-						blk.add_m64_offset_r32(
-							op::Register::DI,
-							isize::from(dst) * 4,
-							op::Register::DX,
+						blk.add(
+							op::Size::DW,
+							op::ModRegMR::Rel32Reg {
+								dst: op::Register::DI,
+								disp: i32::from(dst) * 4,
+								src: op::Register::DX,
+							}
 						);
 					} else {
 						blk.mov_r32_m64_offset(
@@ -69,10 +72,13 @@ impl Jit {
 							op::Register::DI,
 							isize::from(a) * 4,
 						);
-						blk.add_r32_m64_offset(
-							op::Register::DX,
-							op::Register::DI,
-							isize::from(b) * 4,
+						blk.add(
+							op::Size::DW,
+							op::ModRegMR::RegRel32 {
+								dst: op::Register::DX,
+								src: op::Register::DI,
+								disp: i32::from(b) * 4,
+							}
 						);
 						blk.mov_m64_offset_r32(
 							op::Register::DI,
