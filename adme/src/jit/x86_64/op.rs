@@ -1,7 +1,7 @@
 //! List of opcodes and functions to generate them.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Register {
+pub enum Reg {
 	AX = 0b0_000,
 	BX = 0b0_011,
 	CX = 0b0_001,
@@ -20,7 +20,7 @@ pub enum Register {
 	R15 = 0b1_111,
 }
 
-impl Register {
+impl Reg {
 	fn extended(self) -> bool {
 		(self as u8) & 0b1_000 > 0
 	}
@@ -44,52 +44,96 @@ impl Register {
 #[derive(Clone, Copy, Debug)]
 pub enum ModRegMR {
 	/// SIB without base (d = 1, m = 0)
-	RegScale { dst: Register, src: Register, scale: Scale, disp: i32 },
+	RegScale {
+		dst: Reg,
+		src: Reg,
+		scale: Scale,
+		disp: i32,
+	},
 	/// SIB without base (d = 0, m = 0)
-	ScaleReg { dst: Register, src: Register, scale: Scale, disp: i32 },
+	ScaleReg {
+		dst: Reg,
+		src: Reg,
+		scale: Scale,
+		disp: i32,
+	},
 
 	/// SIB without base (d = 1, m = 0)
-	RegIndex { dst: Register, src: Register, index: Register, scale: Scale },
+	RegIndex {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+	},
 	/// SIB without base (d = 0, m = 0)
-	IndexReg { dst: Register, src: Register, index: Register, scale: Scale },
+	IndexReg {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+	},
 
 	/// SIB with base (d = 1, m = 0)
-	RegIndex8 { dst: Register, src: Register, index: Register, scale: Scale, disp: i8 },
+	RegIndex8 {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i8,
+	},
 	/// SIB with base (d = 0, m = 0)
-	Index8Reg { dst: Register, src: Register, index: Register, scale: Scale, disp: i8 },
+	Index8Reg {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i8,
+	},
 
 	/// SIB with base (d = 1, m = 0)
-	RegIndex32 { dst: Register, src: Register, index: Register, scale: Scale, disp: i32 },
+	RegIndex32 {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i32,
+	},
 	/// SIB with base (d = 0, m = 0)
-	Index32Reg { dst: Register, src: Register, index: Register, scale: Scale, disp: i32 },
+	Index32Reg {
+		dst: Reg,
+		src: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i32,
+	},
 
 	/// i8 offset (d = 1, m = 0)
-	RegRel8 { dst: Register, src: Register, disp: i8 },
+	RegRel8 { dst: Reg, src: Reg, disp: i8 },
 	/// i8 offset (d = 0, m = 0)
-	Rel8Reg { dst: Register, disp: i8, src: Register },
+	Rel8Reg { dst: Reg, disp: i8, src: Reg },
 
 	/// Direct memory addressing (d = 1, m = 0)
-	RegMem { dst: Register, src: Register },
+	RegMem { dst: Reg, src: Reg },
 	/// Direct memory addressing (d = 0, m = 0)
-	MemReg { dst: Register, src: Register },
+	MemReg { dst: Reg, src: Reg },
 
 	/// i32 offset (d = 1, m = 0)
-	RegRel32 { dst: Register, src: Register, disp: i32 },
+	RegRel32 { dst: Reg, src: Reg, disp: i32 },
 	/// i32 offset (d = 0, m = 0)
-	Rel32Reg { dst: Register, disp: i32, src: Register },
+	Rel32Reg { dst: Reg, disp: i32, src: Reg },
 
 	/// u8 displacement (d = 1, m = 1)
-	RegDisp8 { dst: Register, src: Register, disp: u8 },
+	RegDisp8 { dst: Reg, src: Reg, disp: u8 },
 	/// u8 displacement (d = 0, m = 1)
-	Disp8Reg { dst: Register, src: Register, disp: u8 },
+	Disp8Reg { dst: Reg, src: Reg, disp: u8 },
 
 	/// u32 displacement (d = 1, m = 2)
-	RegDisp32 { dst: Register, src: Register, disp: u32 },
+	RegDisp32 { dst: Reg, src: Reg, disp: u32 },
 	/// u32 displacement (d = 0, m = 2)
-	Disp32Reg { dst: Register, index: Register, disp: u32 },
+	Disp32Reg { dst: Reg, index: Reg, disp: u32 },
 
-	/// Register addressing mode (d = 1, m = 3)
-	RegReg { src: Register, dst: Register },
+	/// Reg addressing mode (d = 1, m = 3)
+	RegReg { src: Reg, dst: Reg },
 }
 
 impl ModRegMR {
@@ -99,7 +143,7 @@ impl ModRegMR {
 		assert_eq!(*op_l & 3, 0, "op[0:1] are used for s and d");
 		match size {
 			Size::B => todo!("account for overlap between [abcd]h and si/di/ps/bs"),
-			Size::W => push(0x66), // Operand size prefix
+			Size::W => push(0x66),  // Operand size prefix
 			Size::DW => *op_l |= 1, // s = 1
 			Size::QW => {
 				push(0x48); // REX.W
@@ -121,43 +165,105 @@ impl ModRegMR {
 
 		// Encode args
 		match self {
-			Self::RegScale { dst: r, src: m, scale, disp }
-			| Self::ScaleReg { dst: m, src: r, scale, disp } => {
+			Self::RegScale {
+				dst: r,
+				src: m,
+				scale,
+				disp,
+			}
+			| Self::ScaleReg {
+				dst: m,
+				src: r,
+				scale,
+				disp,
+			} => {
 				push(0 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | m.num3() << 3 | 0b101);
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegIndex { dst: r, src: m, index, scale }
-			| Self::IndexReg { dst: m, src: r, index, scale } => {
-				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
+			Self::RegIndex {
+				dst: r,
+				src: m,
+				index,
+				scale,
+			}
+			| Self::IndexReg {
+				dst: m,
+				src: r,
+				index,
+				scale,
+			} => {
+				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
 				push(0 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
 			}
-			Self::RegIndex8 { dst: r, src: m, index, scale, disp }
-			| Self::Index8Reg { dst: m, src: r, index, scale, disp } => {
-				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
-				push(0 << 6 | r.num3() << 3 | 0b100);
+			Self::RegIndex8 {
+				dst: r,
+				src: m,
+				index,
+				scale,
+				disp,
+			}
+			| Self::Index8Reg {
+				dst: m,
+				src: r,
+				index,
+				scale,
+				disp,
+			} => {
+				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
+				push(1 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegIndex32 { dst: r, src: m, index, scale, disp }
-			| Self::Index32Reg { dst: m, src: r, index, scale, disp } => {
-				assert_ne!(m, Register::BP, "todo: handle SIB for BP");
-				push(0 << 6 | r.num3() << 3 | 0b100);
+			Self::RegIndex32 {
+				dst: r,
+				src: m,
+				index,
+				scale,
+				disp,
+			}
+			| Self::Index32Reg {
+				dst: m,
+				src: r,
+				index,
+				scale,
+				disp,
+			} => {
+				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
+				push(2 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegMem { dst: r, src: m } | Self::MemReg { dst: m, src: r} => {
-				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+			Self::RegMem { dst: r, src: m } | Self::MemReg { dst: m, src: r } => {
+				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(0 << 6 | r.num3() << 3 | m.num3());
 			}
-			Self::RegRel8 { dst: r, src: m, disp } | Self::Rel8Reg { dst: m, src: r, disp } => {
-				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+			Self::RegRel8 {
+				dst: r,
+				src: m,
+				disp,
+			}
+			| Self::Rel8Reg {
+				dst: m,
+				src: r,
+				disp,
+			} => {
+				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(1 << 6 | r.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegRel32 { dst: r, src: m, disp } | Self::Rel32Reg { dst: m, src: r, disp } => {
-				assert_ne!(m, Register::SP, "todo: handle SIB for SP");
+			Self::RegRel32 {
+				dst: r,
+				src: m,
+				disp,
+			}
+			| Self::Rel32Reg {
+				dst: m,
+				src: r,
+				disp,
+			} => {
+				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(2 << 6 | r.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
@@ -173,15 +279,132 @@ impl ModRegMR {
 
 	pub fn optimize(self) -> Self {
 		match self {
-			Self::RegRel32 { dst, src, disp } => if let Ok(disp) = i8::try_from(disp) {
-				return Self::RegRel8 { dst, src, disp }.optimize();
+			Self::RegIndex32 {
+				dst,
+				src,
+				index,
+				scale,
+				disp,
+			} => {
+				if let Ok(disp) = i8::try_from(disp) {
+					return Self::RegIndex8 {
+						dst,
+						src,
+						index,
+						scale,
+						disp,
+					}
+					.optimize();
+				}
 			}
-			Self::Rel32Reg { dst, src, disp } => if let Ok(disp) = i8::try_from(disp) {
-				return Self::Rel8Reg { dst, src, disp }.optimize();
+			Self::RegIndex8 {
+				dst,
+				src,
+				index,
+				scale,
+				disp,
+			} => {
+				if disp == 0 {
+					return Self::RegIndex {
+						dst,
+						src,
+						index,
+						scale,
+					}
+					.optimize();
+				}
+			}
+			Self::RegRel32 { dst, src, disp } => {
+				if let Ok(disp) = i8::try_from(disp) {
+					return Self::RegRel8 { dst, src, disp }.optimize();
+				}
+			}
+			Self::RegRel8 { dst, src, disp } => {
+				if disp == 0 {
+					return Self::RegMem { dst, src }.optimize();
+				}
+			}
+			Self::Index32Reg {
+				dst,
+				src,
+				index,
+				scale,
+				disp,
+			} => {
+				if let Ok(disp) = i8::try_from(disp) {
+					return Self::Index8Reg {
+						dst,
+						src,
+						index,
+						scale,
+						disp,
+					}
+					.optimize();
+				}
+			}
+			Self::Index8Reg {
+				dst,
+				src,
+				index,
+				scale,
+				disp,
+			} => {
+				if disp == 0 {
+					return Self::IndexReg {
+						dst,
+						src,
+						index,
+						scale,
+					}
+					.optimize();
+				}
+			}
+			Self::Rel32Reg { dst, src, disp } => {
+				if let Ok(disp) = i8::try_from(disp) {
+					return Self::Rel8Reg { dst, src, disp }.optimize();
+				}
+			}
+			Self::Rel8Reg { dst, src, disp } => {
+				if disp == 0 {
+					return Self::MemReg { dst, src }.optimize();
+				}
 			}
 			_ => (),
 		}
 		self
+	}
+
+	pub fn rr(dst: Reg, src: Reg) -> Self {
+		Self::RegReg { dst, src }.optimize()
+	}
+
+	pub fn rr32(dst: Reg, src: (Reg, i32)) -> Self {
+		Self::RegRel32 {
+			dst,
+			src: src.0,
+			disp: src.1,
+		}
+		.optimize()
+	}
+
+	pub fn r32r(dst: (Reg, i32), src: Reg) -> Self {
+		Self::Rel32Reg {
+			dst: dst.0,
+			disp: dst.1,
+			src,
+		}
+		.optimize()
+	}
+
+	pub fn ri32(dst: Reg, src: (Reg, Reg, Scale, i32)) -> Self {
+		Self::RegIndex32 {
+			dst,
+			src: src.0,
+			index: src.1,
+			scale: src.2,
+			disp: src.3,
+		}
+		.optimize()
 	}
 }
 
@@ -191,44 +414,62 @@ impl ModRegMR {
 #[derive(Clone, Copy, Debug)]
 pub enum ModRegMI {
 	/// SIB without base (d = 0, m = 0)
-	Scale { dst: Register, scale: Scale, disp: i32 },
+	Scale { dst: Reg, scale: Scale, disp: i32 },
 
 	/// SIB without base (d = 0, m = 0)
-	Index { dst: Register, index: Register, scale: Scale },
+	Index { dst: Reg, index: Reg, scale: Scale },
 
 	/// SIB with base (d = 0, m = 0)
-	Index8 { dst: Register, index: Register, scale: Scale, disp: i8 },
+	Index8 {
+		dst: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i8,
+	},
 
 	/// SIB with base (d = 0, m = 0)
-	Index32 { dst: Register, index: Register, scale: Scale, disp: i32 },
+	Index32 {
+		dst: Reg,
+		index: Reg,
+		scale: Scale,
+		disp: i32,
+	},
 
 	/// i7 offset (d = 1, m = 0)
-	Rel8 { dst: Register, disp: i8 },
+	Rel8 { dst: Reg, disp: i8 },
 
 	/// Direct memory addressing (d = 0, m = 0)
-	Mem { dst: Register },
+	Mem { dst: Reg },
 
 	/// i32 offset (d = 0, m = 0)
-	Rel32 { dst: Register, disp: i32 },
+	Rel32 { dst: Reg, disp: i32 },
 
 	/// u8 displacement (d = 0, m = 1)
-	Disp8 { dst: Register, disp: u8 },
+	Disp8 { dst: Reg, disp: u8 },
 
 	/// u32 displacement (d = 0, m = 2)
-	Disp32 { dst: Register, disp: u32 },
+	Disp32 { dst: Reg, disp: u32 },
 
-	/// Register addressing mode (d = 0, m = 3)
-	Reg { dst: Register },
+	/// Reg addressing mode (d = 0, m = 3)
+	Reg { dst: Reg },
 }
 
 impl ModRegMI {
-	fn encode(self, op: &mut [u8], size: Size, imm: Immediate, mut push: impl FnMut(u8)) {
+	fn encode(
+		self,
+		op: &mut [u8],
+		op_ext: u8,
+		size: Size,
+		imm: Immediate,
+		mut push: impl FnMut(u8),
+	) {
 		// Encode op
 		let op_l = op.last_mut().expect("op cannot be empty");
 		assert_eq!(*op_l & 3, 0, "op[0:1] are used for s and x");
+		assert!(op_ext < 8, "op_ext must be in range [0; 7]");
 		match size {
 			Size::B => todo!("account for overlap between [abcd]h and si/di/ps/bs"),
-			Size::W => push(0x66), // Operand size prefix
+			Size::W => push(0x66),  // Operand size prefix
 			Size::DW => *op_l |= 1, // s = 1
 			Size::QW => {
 				push(0x48); // REX.W
@@ -242,7 +483,9 @@ impl ModRegMI {
 			}
 			Immediate::W(imm) => {
 				assert!(size >= Size::W, "immediate too large");
-				(size == Size::DW).then(|| Immediate::DW(imm.into())).unwrap_or(Immediate::W(imm))
+				(size == Size::DW)
+					.then(|| Immediate::DW(imm.into()))
+					.unwrap_or(Immediate::W(imm))
 			}
 			Immediate::DW(imm) => {
 				assert!(size >= Size::DW, "immediate too large");
@@ -255,43 +498,53 @@ impl ModRegMI {
 		// Encode args
 		match self {
 			Self::Scale { dst, scale, disp } => {
-				push(0 << 6 | 0b100);
+				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | dst.num3() << 3 | 0b101);
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
 			Self::Index { dst, index, scale } => {
-				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
-				push(0 << 6 | 0b100);
+				assert_ne!(dst, Reg::BP, "todo: handle SIB for BP");
+				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
 			}
-			Self::Index8 { dst, index, scale, disp } => {
-				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
-				push(0 << 6 | 0b100);
+			Self::Index8 {
+				dst,
+				index,
+				scale,
+				disp,
+			} => {
+				assert_ne!(dst, Reg::BP, "todo: handle SIB for BP");
+				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
-			Self::Index32 { dst, index, scale, disp } => {
-				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
-				push(0 << 6 | 0b100);
+			Self::Index32 {
+				dst,
+				index,
+				scale,
+				disp,
+			} => {
+				assert_ne!(dst, Reg::BP, "todo: handle SIB for BP");
+				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
 			Self::Mem { dst } => {
-				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
-				push(0 << 6 | dst.num3());
+				assert_ne!(dst, Reg::SP, "todo: handle SIB for SP");
+				push(0 << 6 | op_ext << 3 | dst.num3());
 			}
 			Self::Rel8 { dst, disp } => {
-				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
-				push(1 << 6 | dst.num3());
+				assert_ne!(dst, Reg::SP, "todo: handle SIB for SP");
+				push(1 << 6 | op_ext << 3 | dst.num3());
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
 			Self::Rel32 { dst, disp } => {
-				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
-				push(2 << 6 | dst.num3());
+				assert_ne!(dst, Reg::SP, "todo: handle SIB for SP");
+				push(2 << 6 | op_ext << 3 | dst.num3());
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
 			Self::Reg { dst } => {
-				push(3 << 6 | dst.num3());
+				push(3 << 6 | op_ext << 3 | dst.num3());
 			}
 			Self::Disp8 { .. } | Self::Disp32 { .. } => todo!(),
 		}
@@ -302,18 +555,32 @@ impl ModRegMI {
 
 	pub fn optimize(self) -> Self {
 		match self {
-			Self::Rel32 { dst, disp } => if let Ok(disp) = i8::try_from(disp) {
-				return Self::Rel8 { dst, disp }.optimize();
+			Self::Rel32 { dst, disp } => {
+				if let Ok(disp) = i8::try_from(disp) {
+					return Self::Rel8 { dst, disp }.optimize();
+				}
 			}
-			Self::Rel8 { dst, disp } => if disp == 0 {
-				return Self::Mem { dst }.optimize();
+			Self::Rel8 { dst, disp } => {
+				if disp == 0 {
+					return Self::Mem { dst }.optimize();
+				}
 			}
 			_ => (),
 		}
 		self
 	}
-}
 
+	pub fn r(dst: Reg) -> Self {
+		Self::Reg { dst }
+	}
+
+	pub fn r32(dst: (Reg, i32)) -> Self {
+		Self::Rel32 {
+			dst: dst.0,
+			disp: dst.1,
+		}
+	}
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Scale {
@@ -364,14 +631,20 @@ impl Immediate {
 
 	pub fn optimize(self) -> Self {
 		match self {
-			Self::QW(i) => if let Ok(i) = i32::try_from(i) {
-				return Self::DW(i).optimize();
+			Self::QW(i) => {
+				if let Ok(i) = i32::try_from(i) {
+					return Self::DW(i).optimize();
+				}
 			}
-			Self::DW(i) => if let Ok(i) = i16::try_from(i) {
-				return Self::W(i).optimize();
+			Self::DW(i) => {
+				if let Ok(i) = i16::try_from(i) {
+					return Self::W(i).optimize();
+				}
 			}
-			Self::W(i) => if let Ok(i) = i8::try_from(i) {
-				return Self::B(i).optimize();
+			Self::W(i) => {
+				if let Ok(i) = i8::try_from(i) {
+					return Self::B(i).optimize();
+				}
 			}
 			Self::B(_) => (),
 		}
@@ -408,132 +681,48 @@ imm_from!(i64, QW);
 imm_from!(try i64, isize, QW);
 imm_from!(try i64, usize, QW);
 
+#[derive(Clone, Copy, Debug)]
+pub enum IOpExt {
+	Add = 0b000,
+	Or = 0b001,
+	Adc = 0b010,
+	Sbb = 0b011,
+	And = 0b100,
+	Sub = 0b101,
+	Xor = 0b110,
+	Cmp = 0b111,
+}
+
 impl super::Block {
-	fn op32_r2(&mut self, op: u8, a: Register, b: Register) {
-		self.push_u8(op);
-		self.push_u8(3 << 6 | b.num3() << 3 | a.num3()); // MOD = 3 | from | to
-	}
-
-	fn op32_m_r(&mut self, op: u8, a: Register, b: Register) {
-		self.push_u8(op);
-		self.push_u8(b.num3() << 3 | a.num3()); // MOD = 0 | from | to
-	}
-
-	fn op32_m_o8_r(&mut self, op: u8, a: Register, offset: i8, b: Register) {
-		self.push_u8(op);
-		self.push_u8(1 << 6 | b.num3() << 3 | a.num3()); // MOD = 1 | from | to
-		self.push_u8(offset as u8);
-	}
-
-	fn op32_m_o32_r(&mut self, op: u8, a: Register, offset: i32, b: Register) {
-		self.push_u8(op);
-		self.push_u8(2 << 6 | b.num3() << 3 | a.num3()); // MOD = 2 | from | to
-		offset.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-	}
-
-	fn op32_r_m_o8(&mut self, op: u8, a: Register, b: Register, offset: i8) {
-		self.push_u8(op | 0b10); // D = 1
-		self.push_u8(1 << 6 | a.num3() << 3 | b.num3()); // MOD = 1 | to | from
-		self.push_u8(offset as u8);
-	}
-
-	fn op32_r_m_o32(&mut self, op: u8, a: Register, b: Register, offset: i32) {
-		self.push_u8(op | 0b10); // D = 1
-		self.push_u8(2 << 6 | a.num3() << 3 | b.num3()); // MOD = 2 | to | from
-		offset.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-	}
-
 	pub(super) fn add(&mut self, size: Size, args: ModRegMR) {
 		args.encode(&mut [0x00], size, |b| self.push_u8(b));
 	}
 
 	pub(super) fn addi(&mut self, size: Size, args: ModRegMI, imm: Immediate) {
-		args.encode(&mut [0x80], size, imm, |b| self.push_u8(b));
+		args.encode(&mut [0x80], IOpExt::Add as u8, size, imm, |b| {
+			self.push_u8(b)
+		});
 	}
 
-	pub(super) fn add32_r2(&mut self, a: Register, b: Register) {
-		self.op32_r2(0x01, a, b);
+	pub(super) fn or(&mut self, size: Size, args: ModRegMR) {
+		args.encode(&mut [0x08], size, |b| self.push_u8(b));
 	}
 
-	pub(super) fn add_r64_r64(&mut self, a: Register, b: Register) {
-		self.push_u8(0x48); // REX.W
-		self.op32_r2(0x01, a, b);
+	pub(super) fn ori(&mut self, size: Size, args: ModRegMI, imm: Immediate) {
+		args.encode(&mut [0x80], IOpExt::Or as u8, size, imm, |b| {
+			self.push_u8(b)
+		});
 	}
 
-	pub(super) fn add_r32_imm(&mut self, dst: Register, imm: isize) {
-		dst.extended().then(|| self.push_u8(0x41));
-		if let Ok(imm) = i8::try_from(imm) {
-			self.push_u8(0x83);
-			self.push_u8(0xc0 | dst.num3());
-			imm.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-		} else if let Ok(imm) = i32::try_from(imm) {
-			self.push_u8(0x81);
-			self.push_u8(0xb0 | dst.num3());
-			imm.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-		} else {
-			panic!("immediate too large");
-		}
+	pub(super) fn xor(&mut self, size: Size, args: ModRegMR) {
+		args.encode(&mut [0x30], size, |b| self.push_u8(b));
 	}
 
-	pub(super) fn add_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.op32_m_o8_r(0x01, a, offset, b);
+	pub(super) fn cmp(&mut self, size: Size, args: ModRegMR) {
+		args.encode(&mut [0x38], size, |b| self.push_u8(b));
 	}
 
-	pub(super) fn add_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.op32_r_m_o8(0x01, a, b, offset);
-	}
-
-	pub(super) fn add_m64_32_offset_imm(&mut self, to: Register, offset: isize, imm: isize) {
-		assert!(!to.extended(), "todo");
-		let imm = i8::try_from(imm).expect("todo: 16/32/64 bit immediates");
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.push_u8(0x83); // ADD
-		self.push_u8(1 << 6 | to.num3()); // MOD = 1 | to
-		self.push_u8(offset as u8);
-		self.push_u8(imm as u8);
-	}
-
-	pub(super) fn sub32_r2(&mut self, a: Register, b: Register) {
-		self.op32_r2(0x29, a, b);
-	}
-
-	pub(super) fn or_m64_offset_imm(&mut self, a: Register, offset: isize, imm: usize) {
-		assert!(offset < 128, "todo: dword offset");
-		if imm <= usize::from(u16::MAX) {
-			self.push_u8(0x66); //  Prefix
-		} else if imm > usize::try_from(u32::MAX).unwrap() {
-			todo!("64 bit immediates");
-		}
-		self.push_u8(0x81); // OR
-		self.push_u8(0x48 | a.num3()); // MOD = 1 | dst
-		self.push_u8(offset as i8 as u8);
-		if imm <= usize::from(u16::MAX) {
-			(imm as u16).to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-		} else if imm <= usize::try_from(u32::MAX).unwrap() {
-			(imm as u32).to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-		} else {
-			todo!();
-		}
-	}
-
-	pub(super) fn or_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.op32_m_o8_r(0x09, a, offset, b);
-	}
-
-	pub(super) fn or_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
-		if let Ok(offset) = i8::try_from(offset) {
-			self.op32_r_m_o8(0x09, a, b, offset);
-		} else if let Ok(offset) = i32::try_from(offset) {
-			self.op32_r_m_o32(0x09, a, b, offset);
-		} else {
-			panic!("offset out of range");
-		}
-	}
-
-	pub(super) fn div_m64_offset(&mut self, base: Register, offset: isize) {
+	pub(super) fn div_m64_offset(&mut self, base: Reg, offset: isize) {
 		let offset = i8::try_from(offset).unwrap();
 		base.extended().then(|| self.push_u8(0x41)); // REX.R
 		self.push_u8(0xf7); // DIV
@@ -541,30 +730,23 @@ impl super::Block {
 		self.push_u8(offset as u8);
 	}
 
-	pub(super) fn cmp32_r2(&mut self, a: Register, b: Register) {
-		self.op32_r2(0x39, a, b);
+	pub(super) fn mov(&mut self, size: Size, args: ModRegMR) {
+		args.encode(&mut [0x88], size, |b| self.push_u8(b));
 	}
 
-	pub(super) fn cmp_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		// src/dst are swapped for mov r, [m] (bit 2 in opcode set)
-		self.op32_m_o8_r(0x3b, b, offset, a);
+	pub(super) fn movzx(&mut self, size: Size, args: ModRegMR) {
+		assert_ne!(size, Size::B, "no variant for 8 byte operands");
+		args.encode(&mut [0x0f, 0xb4], size, |b| self.push_u8(b));
 	}
 
-	pub(super) fn mov_r64_r64(&mut self, dst: Register, src: Register) {
+	pub(super) fn mov_r64_r64(&mut self, dst: Reg, src: Reg) {
 		assert!(!dst.extended(), "todo: extended registers");
 		self.push_u8(0x48); // REX.W
 		self.push_u8(0x89); // MOV
 		self.push_u8(3 << 6 | src.num3() << 3 | dst.num3()); // MOD = 3
 	}
 
-	pub(super) fn mov_r32_imm32(&mut self, dst: Register, num: u32) {
-		assert!(!dst.extended(), "todo: extended registers");
-		self.push_u8(0xb8 | dst.num3());
-		num.to_le_bytes().iter().for_each(|b| self.push_u8(*b));
-	}
-
-	pub(super) fn mov_r64_immu(&mut self, dst: Register, num: usize) {
+	pub(super) fn mov_r64_immu(&mut self, dst: Reg, num: usize) {
 		assert!(!dst.extended(), "todo: extended registers");
 		if let Ok(num) = u32::try_from(num) {
 			self.push_u8(0xb8 | dst.num3());
@@ -576,12 +758,7 @@ impl super::Block {
 		}
 	}
 
-	pub(super) fn mov_m64_r32(&mut self, dst: Register, src: Register) {
-		assert!(!dst.extended(), "todo: extended registers");
-		self.op32_m_r(0x89, dst, src)
-	}
-
-	pub(super) fn mov_m64_offset_imm32(&mut self, dst: Register, offset: isize, imm: usize) {
+	pub(super) fn mov_m64_offset_imm32(&mut self, dst: Reg, offset: isize, imm: usize) {
 		assert!(!dst.extended(), "todo: extended registers");
 		assert!(offset < 128, "todo: dword offset");
 		if imm > usize::try_from(u32::MAX).unwrap() {
@@ -591,38 +768,13 @@ impl super::Block {
 		self.push_u8(0x40 | dst.num3()); // MOD = 1 | dst
 		self.push_u8(offset as i8 as u8);
 		if imm <= usize::try_from(u32::MAX).unwrap() {
-			(imm as u32).to_le_bytes().iter().for_each(|b| self.push_u8(*b));
+			(imm as u32)
+				.to_le_bytes()
+				.iter()
+				.for_each(|b| self.push_u8(*b));
 		} else {
 			todo!();
 		}
-	}
-
-	pub(super) fn mov_r32_m64_offset(&mut self, a: Register, b: Register, offset: isize) {
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.op32_r_m_o8(0x89, a, b, offset);
-	}
-
-	pub(super) fn mov_m64_offset_r32(&mut self, a: Register, offset: isize, b: Register) {
-		if let Ok(offset) = i8::try_from(offset) {
-			self.op32_m_o8_r(0x89, a, offset, b);
-		} else if let Ok(offset) = i32::try_from(offset) {
-			self.op32_m_o32_r(0x89, a, offset, b);
-		} else {
-			panic!("offset out of range");
-		}
-	}
-
-	pub(super) fn movzx_r8_m64_sib_offset(&mut self, dst: Register, base: Register, index: Register, scale: u8, offset: isize) {
-		assert!(scale < 4, "todo");
-		assert!(!dst.extended(), "todo");
-		assert!(!base.extended(), "todo");
-		assert!(!index.extended(), "todo");
-		let offset = i8::try_from(offset).expect("todo: 16/32 bit offsets");
-		self.push_u8(0x0f); // Expansion prefix
-		self.push_u8(0xb6); // MOVZX
-		self.push_u8(1 << 6 | dst.num3() << 3 | 0b100); // MOD = off8 | dst | mode = SIB
-		self.push_u8(scale << 6 | index.num3() << 3 | base.num3()); // scale | index | base
-		self.push_u8(offset as u8);
 	}
 
 	pub(super) fn jz(&mut self, offset: isize) {
@@ -652,13 +804,13 @@ impl super::Block {
 		}
 	}
 
-	pub(super) fn jmp_r64(&mut self, to: Register) {
+	pub(super) fn jmp_r64(&mut self, to: Reg) {
 		to.extended().then(|| self.push_u8(0x41)); // ???
 		self.push_u8(0xff); // JMP
 		self.push_u8(0xe0 | to.num3()); // ??? | to
 	}
 
-	pub(super) fn call_r64(&mut self, to: Register) {
+	pub(super) fn call_r64(&mut self, to: Reg) {
 		to.extended().then(|| self.push_u8(0x41)); // ???
 		self.push_u8(0xff); // ???
 		self.push_u8(0xd0 | to.num3()); // CALL | fn
@@ -673,27 +825,23 @@ impl super::Block {
 		self.push_u8(0x0b);
 	}
 
-	pub(super) fn push_r64(&mut self, reg: Register) {
+	pub(super) fn push_r64(&mut self, reg: Reg) {
 		assert!(!reg.extended(), "todo");
 		self.push_u8(0x50 | reg.num3());
 	}
 
-	pub(super) fn pop_r64(&mut self, reg: Register) {
+	pub(super) fn pop_r64(&mut self, reg: Reg) {
 		assert!(!reg.extended(), "todo");
 		self.push_u8(0x58 | reg.num3());
 	}
 
-	pub(super) fn xor_r32_r32(&mut self, dst: Register, src: Register) {
-		self.op32_r2(0x31, dst, src)
-	}
-
-	pub(super) fn setl(&mut self, dst: Register, high: bool) {
+	pub(super) fn setl(&mut self, dst: Reg, high: bool) {
 		self.push_u8(0x0f); // Expansion prefix
 		self.push_u8(0x9c); // SETL
 		self.push_u8(0xc0 | dst.num3b(high));
 	}
 
-	pub(super) fn setg(&mut self, dst: Register, high: bool) {
+	pub(super) fn setg(&mut self, dst: Reg, high: bool) {
 		self.push_u8(0x0f); // Expansion prefix
 		self.push_u8(0x9f); // SETG
 		self.push_u8(0xc0 | dst.num3b(high));

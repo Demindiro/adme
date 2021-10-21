@@ -379,7 +379,12 @@ impl<'a, 'b> Assembler<'a, 'b> {
 		self.push_r(s, 0, t, 0, Function::Add)
 	}
 
-	fn parse_pseudo_branch(&mut self, branch: PseudoBranch, unsigned: bool, args: &'a str) -> Result<'a> {
+	fn parse_pseudo_branch(
+		&mut self,
+		branch: PseudoBranch,
+		unsigned: bool,
+		args: &'a str,
+	) -> Result<'a> {
 		let (a, b, label) = Self::decode_2_regs_1_imm(args)?;
 		let cmp_op = unsigned.then(|| Function::Sltu).unwrap_or(Function::Slt);
 		let (a, b) = match branch {

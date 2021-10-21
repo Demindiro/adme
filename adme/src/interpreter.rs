@@ -116,7 +116,11 @@ pub struct Cpu {
 }
 
 impl Cpu {
-	pub fn step<M>(&mut self, memory: &mut M, syscall: fn(&mut Self, &mut M)) -> Result<(), StepError>
+	pub fn step<M>(
+		&mut self,
+		memory: &mut M,
+		syscall: fn(&mut Self, &mut M),
+	) -> Result<(), StepError>
 	where
 		M: Memory,
 	{
@@ -132,70 +136,68 @@ impl Cpu {
 		let (i_s, i_t) = (usize::from(i.s), usize::from(i.t));
 
 		match Op::try_from(instr)? {
-			Op::Function => {
-				match Function::try_from(instr)? {
-					Function::Add => {
-						self.gp[r_d] = (self.gp[r_s] as i32)
-							.checked_add(self.gp[r_t] as i32)
-							.ok_or(StepError::Trap)? as u32
-					}
-					Function::Addu => self.apply_r(instr, u32::wrapping_add),
-					Function::And => self.apply_r(instr, |a, b| a & b),
-					Function::Nor => self.apply_r(instr, |a, b| !(a | b)),
-					Function::Or => self.apply_r(instr, |a, b| a | b),
-					Function::Div => {
-						if self.gp[r_t] == 0 {
-							return Err(StepError::Trap);
-						}
-						self.hi = (self.gp[r_s] as i32 % self.gp[r_t] as i32) as u32;
-						self.lo = (self.gp[r_s] as i32 / self.gp[r_t] as i32) as u32;
-					}
-					Function::Divu => {
-						if self.gp[r_t] == 0 {
-							return Err(StepError::Trap);
-						}
-						self.hi = self.gp[r_s] % self.gp[r_t];
-						self.lo = self.gp[r_s] / self.gp[r_t];
-					}
-					Function::Mult => {
-						let r = i64::from(self.gp[r_s] as i32) * i64::from(self.gp[r_t] as i32);
-						self.hi = (r as u64 >> 32) as u32;
-						self.lo = r as u64 as u32;
-					}
-					Function::Multu => {
-						let r = u64::from(self.gp[r_s]) * u64::from(self.gp[r_t]);
-						self.hi = (r >> 32) as u32;
-						self.lo = r as u32;
-					}
-					Function::Sll => self.gp[r_d] = self.gp[r_t].wrapping_shl(r_s as u32),
-					Function::Srl => self.gp[r_d] = self.gp[r_t].wrapping_shr(r_s as u32),
-					Function::Sra => {
-						self.gp[r_d] = (self.gp[r_t] as i32).wrapping_shr(r_s as u32) as u32
-					}
-					Function::Sllv => self.apply_r(instr, u32::wrapping_shl),
-					Function::Srlv => self.apply_r(instr, u32::wrapping_shl),
-					Function::Srav => self.apply_r(instr, |a, b| (a as i32).wrapping_shr(b) as u32),
-					Function::Sub => self.apply_r_checked(instr, u32::checked_sub)?,
-					Function::Subu => self.apply_r(instr, u32::wrapping_sub),
-					Function::Xor => self.apply_r(instr, |a, b| a ^ b),
-
-					Function::Slt => self.apply_r(instr, |a, b| u32::from((a as i32) < b as i32)),
-					Function::Sltu => self.apply_r(instr, |a, b| u32::from(a < b)),
-
-					Function::Jr => self.ip = self.gp[r_s],
-					Function::Jalr => {
-						self.gp[31] = self.ip;
-						self.ip = self.gp[r_s]
-					}
-
-					Function::Mfhi => self.gp[r_d] = self.hi,
-					Function::Mflo => self.gp[r_d] = self.lo,
-					Function::Mthi => self.hi = self.gp[r_s],
-					Function::Mtlo => self.lo = self.gp[r_s],
-					
-					Function::Syscall => syscall(self, memory),
+			Op::Function => match Function::try_from(instr)? {
+				Function::Add => {
+					self.gp[r_d] = (self.gp[r_s] as i32)
+						.checked_add(self.gp[r_t] as i32)
+						.ok_or(StepError::Trap)? as u32
 				}
-			}
+				Function::Addu => self.apply_r(instr, u32::wrapping_add),
+				Function::And => self.apply_r(instr, |a, b| a & b),
+				Function::Nor => self.apply_r(instr, |a, b| !(a | b)),
+				Function::Or => self.apply_r(instr, |a, b| a | b),
+				Function::Div => {
+					if self.gp[r_t] == 0 {
+						return Err(StepError::Trap);
+					}
+					self.hi = (self.gp[r_s] as i32 % self.gp[r_t] as i32) as u32;
+					self.lo = (self.gp[r_s] as i32 / self.gp[r_t] as i32) as u32;
+				}
+				Function::Divu => {
+					if self.gp[r_t] == 0 {
+						return Err(StepError::Trap);
+					}
+					self.hi = self.gp[r_s] % self.gp[r_t];
+					self.lo = self.gp[r_s] / self.gp[r_t];
+				}
+				Function::Mult => {
+					let r = i64::from(self.gp[r_s] as i32) * i64::from(self.gp[r_t] as i32);
+					self.hi = (r as u64 >> 32) as u32;
+					self.lo = r as u64 as u32;
+				}
+				Function::Multu => {
+					let r = u64::from(self.gp[r_s]) * u64::from(self.gp[r_t]);
+					self.hi = (r >> 32) as u32;
+					self.lo = r as u32;
+				}
+				Function::Sll => self.gp[r_d] = self.gp[r_t].wrapping_shl(r_s as u32),
+				Function::Srl => self.gp[r_d] = self.gp[r_t].wrapping_shr(r_s as u32),
+				Function::Sra => {
+					self.gp[r_d] = (self.gp[r_t] as i32).wrapping_shr(r_s as u32) as u32
+				}
+				Function::Sllv => self.apply_r(instr, u32::wrapping_shl),
+				Function::Srlv => self.apply_r(instr, u32::wrapping_shl),
+				Function::Srav => self.apply_r(instr, |a, b| (a as i32).wrapping_shr(b) as u32),
+				Function::Sub => self.apply_r_checked(instr, u32::checked_sub)?,
+				Function::Subu => self.apply_r(instr, u32::wrapping_sub),
+				Function::Xor => self.apply_r(instr, |a, b| a ^ b),
+
+				Function::Slt => self.apply_r(instr, |a, b| u32::from((a as i32) < b as i32)),
+				Function::Sltu => self.apply_r(instr, |a, b| u32::from(a < b)),
+
+				Function::Jr => self.ip = self.gp[r_s],
+				Function::Jalr => {
+					self.gp[31] = self.ip;
+					self.ip = self.gp[r_s]
+				}
+
+				Function::Mfhi => self.gp[r_d] = self.hi,
+				Function::Mflo => self.gp[r_d] = self.lo,
+				Function::Mthi => self.hi = self.gp[r_s],
+				Function::Mtlo => self.lo = self.gp[r_s],
+
+				Function::Syscall => syscall(self, memory),
+			},
 			Op::Addi => self.apply_i_checked(instr, |a, b| a.checked_add(b as i16 as u32))?,
 			Op::Addiu => self.apply_i(instr, |a, b| a.wrapping_add(b as i16 as u32)),
 			Op::Andi => self.apply_i(instr, |a, b| a & u32::from(b)),

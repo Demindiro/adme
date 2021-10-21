@@ -82,30 +82,40 @@ fn main() {
 	fn real_syscall(code: u32, a: [u32; 4], mem: &mut [u8]) -> [u32; 2] {
 		use std::io::Write;
 		match code {
-			1 => { // print_int
-				std::io::stdout().write_all((a[0] as i32).to_string().as_bytes()).unwrap();
+			1 => {
+				// print_int
+				std::io::stdout()
+					.write_all((a[0] as i32).to_string().as_bytes())
+					.unwrap();
 				std::io::stdout().flush().unwrap();
 				[0, 0]
 			}
-			4 => { // print_string
+			4 => {
+				// print_string
 				let s = &mem[usize::try_from(a[0]).unwrap()..];
 				let e = s.iter().position(|b| *b == 0).unwrap();
 				std::io::stdout().write_all(&s[..e]).unwrap();
 				std::io::stdout().flush().unwrap();
 				[0, 0]
 			}
-			5 => { // read_int
+			5 => {
+				// read_int
 				let mut s = String::new();
 				std::io::stdin().read_line(&mut s).unwrap();
-				[s.as_str().trim().parse::<i32>().expect("invalid integer") as u32, 0]
+				[
+					s.as_str().trim().parse::<i32>().expect("invalid integer") as u32,
+					0,
+				]
 			}
 			10 => std::process::exit(0), // exit
-			11 => { // print_char
+			11 => {
+				// print_char
 				std::io::stdout().write_all(&[a[0] as u8]).unwrap();
 				std::io::stdout().flush().unwrap();
 				[0, 0]
 			}
-			s => { // invalid
+			s => {
+				// invalid
 				eprintln!("invalid syscall: {}", s);
 				[u32::MAX, 0]
 			}
@@ -125,10 +135,14 @@ fn main() {
 		}
 
 		let mut jit = adme::Jit::new(0, syscall);
-		mem.mem.iter().take_while(|c| **c != 0).for_each(|c| jit.push(*c));
+		mem.mem
+			.iter()
+			.take_while(|c| **c != 0)
+			.for_each(|c| jit.push(*c));
 		let exec = jit.finish();
 		{
-			exec.dump(&mut File::create("/tmp/adme_jit.out").unwrap()).unwrap();
+			exec.dump(&mut File::create("/tmp/adme_jit.out").unwrap())
+				.unwrap();
 		}
 		let mut regs = adme::Registers::new();
 		unsafe {
