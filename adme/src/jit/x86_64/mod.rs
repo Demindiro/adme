@@ -125,10 +125,13 @@ impl Jit {
 							imm as usize,
 						)
 					} else if dst == a {
-						blk.add_m64_32_offset_imm(
-							op::Register::DI,
-							isize::from(dst) * 4,
-							imm,
+						blk.addi(
+							op::Size::DW,
+							op::ModRegMI::Rel32 {
+								dst: op::Register::DI,
+								disp: i32::from(dst) * 4,
+							}.optimize(),
+							op::Immediate::try_from(imm).unwrap().optimize(),
 						);
 					} else {
 						blk.mov_r32_m64_offset(

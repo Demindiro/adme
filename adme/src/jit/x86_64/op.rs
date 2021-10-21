@@ -185,6 +185,136 @@ impl ModRegMR {
 	}
 }
 
+/// mod-reg-r/m encoding with immediate for instructions that support it.
+///
+/// Based on http://www.c-jump.com/CIS77/CPU/x86/lecture.html
+#[derive(Clone, Copy, Debug)]
+pub enum ModRegMI {
+	/// SIB without base (d = 0, m = 0)
+	Scale { dst: Register, scale: Scale, disp: i32 },
+
+	/// SIB without base (d = 0, m = 0)
+	Index { dst: Register, index: Register, scale: Scale },
+
+	/// SIB with base (d = 0, m = 0)
+	Index8 { dst: Register, index: Register, scale: Scale, disp: i8 },
+
+	/// SIB with base (d = 0, m = 0)
+	Index32 { dst: Register, index: Register, scale: Scale, disp: i32 },
+
+	/// i7 offset (d = 1, m = 0)
+	Rel8 { dst: Register, disp: i8 },
+
+	/// Direct memory addressing (d = 0, m = 0)
+	Mem { dst: Register },
+
+	/// i32 offset (d = 0, m = 0)
+	Rel32 { dst: Register, disp: i32 },
+
+	/// u8 displacement (d = 0, m = 1)
+	Disp8 { dst: Register, disp: u8 },
+
+	/// u32 displacement (d = 0, m = 2)
+	Disp32 { dst: Register, disp: u32 },
+
+	/// Register addressing mode (d = 0, m = 3)
+	Reg { dst: Register },
+}
+
+impl ModRegMI {
+	fn encode(self, op: &mut [u8], size: Size, imm: Immediate, mut push: impl FnMut(u8)) {
+		// Encode op
+		let op_l = op.last_mut().expect("op cannot be empty");
+		assert_eq!(*op_l & 3, 0, "op[0:1] are used for s and x");
+		match size {
+			Size::B => todo!("account for overlap between [abcd]h and si/di/ps/bs"),
+			Size::W => push(0x66), // Operand size prefix
+			Size::DW => *op_l |= 1, // s = 1
+			Size::QW => {
+				push(0x48); // REX.W
+				*op_l |= 1; // s = 1
+			}
+		}
+		let imm = match imm {
+			Immediate::B(imm) => {
+				*op_l |= 2; // x = 1
+				Immediate::B(imm)
+			}
+			Immediate::W(imm) => {
+				assert!(size >= Size::W, "immediate too large");
+				(size == Size::DW).then(|| Immediate::DW(imm.into())).unwrap_or(Immediate::W(imm))
+			}
+			Immediate::DW(imm) => {
+				assert!(size >= Size::DW, "immediate too large");
+				Immediate::DW(imm)
+			}
+			Immediate::QW(_) => panic!("64 bit immediates are unsupported"),
+		};
+		op.iter().copied().for_each(&mut push);
+
+		// Encode args
+		match self {
+			Self::Scale { dst, scale, disp } => {
+				push(0 << 6 | 0b100);
+				push((scale as u8) << 6 | dst.num3() << 3 | 0b101);
+				disp.to_le_bytes().iter().copied().for_each(&mut push);
+			}
+			Self::Index { dst, index, scale } => {
+				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
+			}
+			Self::Index8 { dst, index, scale, disp } => {
+				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
+				disp.to_le_bytes().iter().copied().for_each(&mut push);
+			}
+			Self::Index32 { dst, index, scale, disp } => {
+				assert_ne!(dst, Register::BP, "todo: handle SIB for BP");
+				push(0 << 6 | 0b100);
+				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
+				disp.to_le_bytes().iter().copied().for_each(&mut push);
+			}
+			Self::Mem { dst } => {
+				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
+				push(0 << 6 | dst.num3());
+			}
+			Self::Rel8 { dst, disp } => {
+				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
+				push(1 << 6 | dst.num3());
+				disp.to_le_bytes().iter().copied().for_each(&mut push);
+			}
+			Self::Rel32 { dst, disp } => {
+				assert_ne!(dst, Register::SP, "todo: handle SIB for SP");
+				push(2 << 6 | dst.num3());
+				disp.to_le_bytes().iter().copied().for_each(&mut push);
+			}
+			Self::Reg { dst } => {
+				push(3 << 6 | dst.num3());
+			}
+			Self::Disp8 { .. } | Self::Disp32 { .. } => todo!(),
+		}
+
+		dbg!(imm);
+		imm.to_le_bytes(&mut [0; 8]).iter().copied().for_each(push);
+	}
+
+	pub fn optimize(self) -> Self {
+		match self {
+			Self::Rel32 { dst, disp } => if let Ok(disp) = i8::try_from(disp) {
+				return Self::Rel8 { dst, disp }.optimize();
+			}
+			Self::Rel8 { dst, disp } => if disp == 0 {
+				return Self::Mem { dst }.optimize();
+			}
+			_ => (),
+		}
+		self
+	}
+}
+
+
 #[derive(Clone, Copy, Debug)]
 pub enum Scale {
 	_1 = 0,
@@ -194,13 +324,89 @@ pub enum Scale {
 }
 
 /// The size of the operands an instruction operates on.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum Size {
-	B,
-	W,
-	DW,
-	QW,
+	B = 0,
+	W = 1,
+	DW = 2,
+	QW = 3,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum Immediate {
+	B(i8),
+	W(i16),
+	DW(i32),
+	QW(i64),
+}
+
+impl Immediate {
+	fn to_le_bytes<'a>(&self, out: &'a mut [u8; 8]) -> &'a [u8] {
+		match self {
+			Self::B(i) => {
+				out[..1].copy_from_slice(&i.to_le_bytes());
+				&out[..1]
+			}
+			Self::W(i) => {
+				out[..2].copy_from_slice(&i.to_le_bytes());
+				&out[..2]
+			}
+			Self::DW(i) => {
+				out[..4].copy_from_slice(&i.to_le_bytes());
+				&out[..4]
+			}
+			Self::QW(i) => {
+				out[..8].copy_from_slice(&i.to_le_bytes());
+				&out[..8]
+			}
+		}
+	}
+
+	pub fn optimize(self) -> Self {
+		match self {
+			Self::QW(i) => if let Ok(i) = i32::try_from(i) {
+				return Self::DW(i).optimize();
+			}
+			Self::DW(i) => if let Ok(i) = i16::try_from(i) {
+				return Self::W(i).optimize();
+			}
+			Self::W(i) => if let Ok(i) = i8::try_from(i) {
+				return Self::B(i).optimize();
+			}
+			Self::B(_) => (),
+		}
+		self
+	}
+}
+
+macro_rules! imm_from {
+	($ty:ty, $v:ident) => {
+		impl From<$ty> for Immediate {
+			fn from(imm: $ty) -> Self {
+				Self::$v(imm.into())
+			}
+		}
+	};
+	(try $from:ty, $ty:ty, $v:ident) => {
+		impl TryFrom<$ty> for Immediate {
+			type Error = <$ty as TryFrom<$from>>::Error;
+
+			fn try_from(imm: $ty) -> Result<Self, Self::Error> {
+				imm.try_into().map(Self::$v)
+			}
+		}
+	};
+}
+
+imm_from!(i8, B);
+imm_from!(u8, W);
+imm_from!(i16, W);
+imm_from!(u16, DW);
+imm_from!(i32, DW);
+imm_from!(u32, QW);
+imm_from!(i64, QW);
+imm_from!(try i64, isize, QW);
+imm_from!(try i64, usize, QW);
 
 impl super::Block {
 	fn op32_r2(&mut self, op: u8, a: Register, b: Register) {
@@ -238,7 +444,11 @@ impl super::Block {
 	}
 
 	pub(super) fn add(&mut self, size: Size, args: ModRegMR) {
-		args.encode(&mut [0o00], size, |b| self.push_u8(b));
+		args.encode(&mut [0x00], size, |b| self.push_u8(b));
+	}
+
+	pub(super) fn addi(&mut self, size: Size, args: ModRegMI, imm: Immediate) {
+		args.encode(&mut [0x80], size, imm, |b| self.push_u8(b));
 	}
 
 	pub(super) fn add32_r2(&mut self, a: Register, b: Register) {
