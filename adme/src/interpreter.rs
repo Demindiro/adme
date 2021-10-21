@@ -338,14 +338,7 @@ impl Cpu {
 impl Cpu {
 	#[cfg_attr(feature = "wasm", wasm_bindgen(constructor))]
 	pub fn new() -> Self {
-		Self {
-			gp: [0; 32],
-			fp: [0.0; 32],
-			ip: 0,
-			steps: 0,
-			hi: 0,
-			lo: 0,
-		}
+		Self { gp: [0; 32], fp: [0.0; 32], ip: 0, steps: 0, hi: 0, lo: 0 }
 	}
 
 	#[cfg_attr(feature = "wasm", wasm_bindgen(js_name = "step"))]
@@ -453,9 +446,7 @@ pub(crate) struct J {
 
 impl J {
 	pub(crate) fn decode(instr: u32) -> J {
-		J {
-			imm: instr & 0x3ff_ffff,
-		}
+		J { imm: instr & 0x3ff_ffff }
 	}
 
 	pub(crate) fn imm_i32(&self) -> i32 {

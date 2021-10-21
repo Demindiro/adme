@@ -26,10 +26,7 @@ struct Block {
 
 impl Block {
 	fn new() -> Self {
-		Self {
-			code: Vec::new(),
-			jump_condition: None,
-		}
+		Self { code: Vec::new(), jump_condition: None }
 	}
 
 	fn push_u8(&mut self, value: u8) {
@@ -44,10 +41,7 @@ pub struct Jit {
 
 impl Jit {
 	pub fn new() -> Self {
-		Self {
-			blocks: Vec::new(),
-			splits: Vec::new(),
-		}
+		Self { blocks: Vec::new(), splits: Vec::new() }
 	}
 
 	/// Translate a single block
@@ -227,9 +221,7 @@ impl Jit {
 			mmap[pos..pos + 4].copy_from_slice(&rel_loc.to_le_bytes());
 		}
 
-		Executable {
-			mmap: mmap.make_exec().unwrap(),
-		}
+		Executable { mmap: mmap.make_exec().unwrap() }
 	}
 }
 
@@ -312,11 +304,7 @@ mod test {
 			&b.code[..],
 			&[0xc3, 0xb8, 0x34, 0x12, 0x00, 0x00, 0x89, 0x06, 0xc3,]
 		);
-		let jit = Jit {
-			blocks: Vec::from([b]),
-			address_map: Vec::new(),
-			ip: 6,
-		};
+		let jit = Jit { blocks: Vec::from([b]), address_map: Vec::new(), ip: 6 };
 		let exec = jit.finish();
 		let mut regs = crate::Registers::new();
 		unsafe {

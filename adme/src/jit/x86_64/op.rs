@@ -2,16 +2,16 @@
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Reg {
-	AX = 0b0_000,
-	BX = 0b0_011,
-	CX = 0b0_001,
-	DX = 0b0_010,
-	DI = 0b0_111,
-	SI = 0b0_110,
-	BP = 0b0_101,
-	SP = 0b0_100,
-	R8 = 0b1_000,
-	R9 = 0b1_001,
+	AX  = 0b0_000,
+	BX  = 0b0_011,
+	CX  = 0b0_001,
+	DX  = 0b0_010,
+	DI  = 0b0_111,
+	SI  = 0b0_110,
+	BP  = 0b0_101,
+	SP  = 0b0_100,
+	R8  = 0b1_000,
+	R9  = 0b1_001,
 	R10 = 0b1_010,
 	R11 = 0b1_011,
 	R12 = 0b1_100,
@@ -44,68 +44,24 @@ impl Reg {
 #[derive(Clone, Copy, Debug)]
 pub enum ModRegMR {
 	/// SIB without base (d = 1, m = 0)
-	RegScale {
-		dst: Reg,
-		src: Reg,
-		scale: Scale,
-		disp: i32,
-	},
+	RegScale { dst: Reg, src: Reg, scale: Scale, disp: i32 },
 	/// SIB without base (d = 0, m = 0)
-	ScaleReg {
-		dst: Reg,
-		src: Reg,
-		scale: Scale,
-		disp: i32,
-	},
+	ScaleReg { dst: Reg, src: Reg, scale: Scale, disp: i32 },
 
 	/// SIB without base (d = 1, m = 0)
-	RegIndex {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-	},
+	RegIndex { dst: Reg, src: Reg, index: Reg, scale: Scale },
 	/// SIB without base (d = 0, m = 0)
-	IndexReg {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-	},
+	IndexReg { dst: Reg, src: Reg, index: Reg, scale: Scale },
 
 	/// SIB with base (d = 1, m = 0)
-	RegIndex8 {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i8,
-	},
+	RegIndex8 { dst: Reg, src: Reg, index: Reg, scale: Scale, disp: i8 },
 	/// SIB with base (d = 0, m = 0)
-	Index8Reg {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i8,
-	},
+	Index8Reg { dst: Reg, src: Reg, index: Reg, scale: Scale, disp: i8 },
 
 	/// SIB with base (d = 1, m = 0)
-	RegIndex32 {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i32,
-	},
+	RegIndex32 { dst: Reg, src: Reg, index: Reg, scale: Scale, disp: i32 },
 	/// SIB with base (d = 0, m = 0)
-	Index32Reg {
-		dst: Reg,
-		src: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i32,
-	},
+	Index32Reg { dst: Reg, src: Reg, index: Reg, scale: Scale, disp: i32 },
 
 	/// i8 offset (d = 1, m = 0)
 	RegRel8 { dst: Reg, src: Reg, disp: i8 },
@@ -165,71 +121,27 @@ impl ModRegMR {
 
 		// Encode args
 		match self {
-			Self::RegScale {
-				dst: r,
-				src: m,
-				scale,
-				disp,
-			}
-			| Self::ScaleReg {
-				dst: m,
-				src: r,
-				scale,
-				disp,
-			} => {
+			Self::RegScale { dst: r, src: m, scale, disp }
+			| Self::ScaleReg { dst: m, src: r, scale, disp } => {
 				push(0 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | m.num3() << 3 | 0b101);
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegIndex {
-				dst: r,
-				src: m,
-				index,
-				scale,
-			}
-			| Self::IndexReg {
-				dst: m,
-				src: r,
-				index,
-				scale,
-			} => {
+			Self::RegIndex { dst: r, src: m, index, scale }
+			| Self::IndexReg { dst: m, src: r, index, scale } => {
 				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
 				push(0 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
 			}
-			Self::RegIndex8 {
-				dst: r,
-				src: m,
-				index,
-				scale,
-				disp,
-			}
-			| Self::Index8Reg {
-				dst: m,
-				src: r,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::RegIndex8 { dst: r, src: m, index, scale, disp }
+			| Self::Index8Reg { dst: m, src: r, index, scale, disp } => {
 				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
 				push(1 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegIndex32 {
-				dst: r,
-				src: m,
-				index,
-				scale,
-				disp,
-			}
-			| Self::Index32Reg {
-				dst: m,
-				src: r,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::RegIndex32 { dst: r, src: m, index, scale, disp }
+			| Self::Index32Reg { dst: m, src: r, index, scale, disp } => {
 				assert_ne!(m, Reg::BP, "todo: handle SIB for BP");
 				push(2 << 6 | r.num3() << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | m.num3());
@@ -239,30 +151,12 @@ impl ModRegMR {
 				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(0 << 6 | r.num3() << 3 | m.num3());
 			}
-			Self::RegRel8 {
-				dst: r,
-				src: m,
-				disp,
-			}
-			| Self::Rel8Reg {
-				dst: m,
-				src: r,
-				disp,
-			} => {
+			Self::RegRel8 { dst: r, src: m, disp } | Self::Rel8Reg { dst: m, src: r, disp } => {
 				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(1 << 6 | r.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
 			}
-			Self::RegRel32 {
-				dst: r,
-				src: m,
-				disp,
-			}
-			| Self::Rel32Reg {
-				dst: m,
-				src: r,
-				disp,
-			} => {
+			Self::RegRel32 { dst: r, src: m, disp } | Self::Rel32Reg { dst: m, src: r, disp } => {
 				assert_ne!(m, Reg::SP, "todo: handle SIB for SP");
 				push(2 << 6 | r.num3() << 3 | m.num3());
 				disp.to_le_bytes().iter().copied().for_each(push);
@@ -279,39 +173,14 @@ impl ModRegMR {
 
 	pub fn optimize(self) -> Self {
 		match self {
-			Self::RegIndex32 {
-				dst,
-				src,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::RegIndex32 { dst, src, index, scale, disp } => {
 				if let Ok(disp) = i8::try_from(disp) {
-					return Self::RegIndex8 {
-						dst,
-						src,
-						index,
-						scale,
-						disp,
-					}
-					.optimize();
+					return Self::RegIndex8 { dst, src, index, scale, disp }.optimize();
 				}
 			}
-			Self::RegIndex8 {
-				dst,
-				src,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::RegIndex8 { dst, src, index, scale, disp } => {
 				if disp == 0 {
-					return Self::RegIndex {
-						dst,
-						src,
-						index,
-						scale,
-					}
-					.optimize();
+					return Self::RegIndex { dst, src, index, scale }.optimize();
 				}
 			}
 			Self::RegRel32 { dst, src, disp } => {
@@ -324,39 +193,14 @@ impl ModRegMR {
 					return Self::RegMem { dst, src }.optimize();
 				}
 			}
-			Self::Index32Reg {
-				dst,
-				src,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::Index32Reg { dst, src, index, scale, disp } => {
 				if let Ok(disp) = i8::try_from(disp) {
-					return Self::Index8Reg {
-						dst,
-						src,
-						index,
-						scale,
-						disp,
-					}
-					.optimize();
+					return Self::Index8Reg { dst, src, index, scale, disp }.optimize();
 				}
 			}
-			Self::Index8Reg {
-				dst,
-				src,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::Index8Reg { dst, src, index, scale, disp } => {
 				if disp == 0 {
-					return Self::IndexReg {
-						dst,
-						src,
-						index,
-						scale,
-					}
-					.optimize();
+					return Self::IndexReg { dst, src, index, scale }.optimize();
 				}
 			}
 			Self::Rel32Reg { dst, src, disp } => {
@@ -379,32 +223,15 @@ impl ModRegMR {
 	}
 
 	pub fn rr32(dst: Reg, src: (Reg, i32)) -> Self {
-		Self::RegRel32 {
-			dst,
-			src: src.0,
-			disp: src.1,
-		}
-		.optimize()
+		Self::RegRel32 { dst, src: src.0, disp: src.1 }.optimize()
 	}
 
 	pub fn r32r(dst: (Reg, i32), src: Reg) -> Self {
-		Self::Rel32Reg {
-			dst: dst.0,
-			disp: dst.1,
-			src,
-		}
-		.optimize()
+		Self::Rel32Reg { dst: dst.0, disp: dst.1, src }.optimize()
 	}
 
 	pub fn ri32(dst: Reg, src: (Reg, Reg, Scale, i32)) -> Self {
-		Self::RegIndex32 {
-			dst,
-			src: src.0,
-			index: src.1,
-			scale: src.2,
-			disp: src.3,
-		}
-		.optimize()
+		Self::RegIndex32 { dst, src: src.0, index: src.1, scale: src.2, disp: src.3 }.optimize()
 	}
 }
 
@@ -420,20 +247,10 @@ pub enum ModRegMI {
 	Index { dst: Reg, index: Reg, scale: Scale },
 
 	/// SIB with base (d = 0, m = 0)
-	Index8 {
-		dst: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i8,
-	},
+	Index8 { dst: Reg, index: Reg, scale: Scale, disp: i8 },
 
 	/// SIB with base (d = 0, m = 0)
-	Index32 {
-		dst: Reg,
-		index: Reg,
-		scale: Scale,
-		disp: i32,
-	},
+	Index32 { dst: Reg, index: Reg, scale: Scale, disp: i32 },
 
 	/// i7 offset (d = 1, m = 0)
 	Rel8 { dst: Reg, disp: i8 },
@@ -507,23 +324,13 @@ impl ModRegMI {
 				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
 			}
-			Self::Index8 {
-				dst,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::Index8 { dst, index, scale, disp } => {
 				assert_ne!(dst, Reg::BP, "todo: handle SIB for BP");
 				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
 				disp.to_le_bytes().iter().copied().for_each(&mut push);
 			}
-			Self::Index32 {
-				dst,
-				index,
-				scale,
-				disp,
-			} => {
+			Self::Index32 { dst, index, scale, disp } => {
 				assert_ne!(dst, Reg::BP, "todo: handle SIB for BP");
 				push(0 << 6 | op_ext << 3 | 0b100);
 				push((scale as u8) << 6 | index.num3() << 3 | dst.num3());
@@ -575,10 +382,7 @@ impl ModRegMI {
 	}
 
 	pub fn r32(dst: (Reg, i32)) -> Self {
-		Self::Rel32 {
-			dst: dst.0,
-			disp: dst.1,
-		}
+		Self::Rel32 { dst: dst.0, disp: dst.1 }
 	}
 }
 
@@ -593,8 +397,8 @@ pub enum Scale {
 /// The size of the operands an instruction operates on.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub enum Size {
-	B = 0,
-	W = 1,
+	B  = 0,
+	W  = 1,
 	DW = 2,
 	QW = 3,
 }
@@ -684,7 +488,7 @@ imm_from!(try i64, usize, QW);
 #[derive(Clone, Copy, Debug)]
 pub enum IOpExt {
 	Add = 0b000,
-	Or = 0b001,
+	Or  = 0b001,
 	Adc = 0b010,
 	Sbb = 0b011,
 	And = 0b100,

@@ -80,12 +80,7 @@ impl Jit {
 		pc: usize,
 		syscall_handler: extern "C" fn(&mut Registers, &mut [u8; 0x4000]),
 	) -> Self {
-		Self {
-			ir: Vec::new(),
-			pc,
-			address_map: Vec::new(),
-			syscall_handler,
-		}
+		Self { ir: Vec::new(), pc, address_map: Vec::new(), syscall_handler }
 	}
 
 	pub fn push(&mut self, instr: u32) {
@@ -97,387 +92,103 @@ impl Jit {
 			let ops = match op {
 				Op::Function => match Function::try_from(instr) {
 					// TODO check for overflow
-					Ok(Function::Add) => (
-						IrOp::Add {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Addu) => (
-						IrOp::Add {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
+					Ok(Function::Add) => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Addu) => (IrOp::Add { dst: r.d, a: r.s, b: r.t }, None),
 					// TODO check for overflow
-					Ok(Function::Sub) => (
-						IrOp::Sub {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Subu) => (
-						IrOp::Sub {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Mult) => (
-						IrOp::Muls {
-							hi: 33,
-							lo: 32,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Multu) => (
-						IrOp::Mulu {
-							hi: 33,
-							lo: 32,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Div) => (
-						IrOp::Divs {
-							rem: 33,
-							quot: 32,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Divu) => (
-						IrOp::Divu {
-							rem: 33,
-							quot: 32,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::And) => (
-						IrOp::And {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Or) => (
-						IrOp::Or {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Xor) => (
-						IrOp::Xor {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Nor) => (
-						IrOp::Nor {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Sll) => (
-						IrOp::Sli {
-							dst: r.d,
-							a: r.t,
-							imm: r.s.into(),
-						},
-						None,
-					),
-					Ok(Function::Srl) => (
-						IrOp::Srli {
-							dst: r.d,
-							a: r.t,
-							imm: r.s.into(),
-						},
-						None,
-					),
-					Ok(Function::Sra) => (
-						IrOp::Srai {
-							dst: r.d,
-							a: r.t,
-							imm: r.s.into(),
-						},
-						None,
-					),
-					Ok(Function::Sllv) => (
-						IrOp::Sl {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Srlv) => (
-						IrOp::Srl {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Srav) => (
-						IrOp::Sra {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
+					Ok(Function::Sub) => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Subu) => (IrOp::Sub { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Mult) => (IrOp::Muls { hi: 33, lo: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Multu) => (IrOp::Mulu { hi: 33, lo: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Div) => (IrOp::Divs { rem: 33, quot: 32, a: r.s, b: r.t }, None),
+					Ok(Function::Divu) => (IrOp::Divu { rem: 33, quot: 32, a: r.s, b: r.t }, None),
+					Ok(Function::And) => (IrOp::And { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Or) => (IrOp::Or { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Xor) => (IrOp::Xor { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Nor) => (IrOp::Nor { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Sll) => (IrOp::Sli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Srl) => (IrOp::Srli { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Sra) => (IrOp::Srai { dst: r.d, a: r.t, imm: r.s.into() }, None),
+					Ok(Function::Sllv) => (IrOp::Sl { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Srlv) => (IrOp::Srl { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Srav) => (IrOp::Sra { dst: r.d, a: r.s, b: r.t }, None),
 					Ok(Function::Jr) => (IrOp::Jr { register: r.s }, None),
-					Ok(Function::Jalr) => (
-						IrOp::Jalr {
-							link: r.t,
-							register: r.s,
-						},
-						None,
-					),
-					Ok(Function::Mflo) => (
-						IrOp::Or {
-							dst: r.d,
-							a: 0,
-							b: 32,
-						},
-						None,
-					),
-					Ok(Function::Mfhi) => (
-						IrOp::Or {
-							dst: r.d,
-							a: 0,
-							b: 33,
-						},
-						None,
-					),
-					Ok(Function::Mtlo) => (
-						IrOp::Or {
-							dst: 32,
-							a: 0,
-							b: r.d,
-						},
-						None,
-					),
-					Ok(Function::Mthi) => (
-						IrOp::Or {
-							dst: 33,
-							a: 0,
-							b: r.d,
-						},
-						None,
-					),
-					Ok(Function::Slt) => (
-						IrOp::Slts {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
-					Ok(Function::Sltu) => (
-						IrOp::Sltu {
-							dst: r.d,
-							a: r.s,
-							b: r.t,
-						},
-						None,
-					),
+					Ok(Function::Jalr) => (IrOp::Jalr { link: r.t, register: r.s }, None),
+					Ok(Function::Mflo) => (IrOp::Or { dst: r.d, a: 0, b: 32 }, None),
+					Ok(Function::Mfhi) => (IrOp::Or { dst: r.d, a: 0, b: 33 }, None),
+					Ok(Function::Mtlo) => (IrOp::Or { dst: 32, a: 0, b: r.d }, None),
+					Ok(Function::Mthi) => (IrOp::Or { dst: 33, a: 0, b: r.d }, None),
+					Ok(Function::Slt) => (IrOp::Slts { dst: r.d, a: r.s, b: r.t }, None),
+					Ok(Function::Sltu) => (IrOp::Sltu { dst: r.d, a: r.s, b: r.t }, None),
 					Ok(Function::Syscall) => (IrOp::Syscall, None),
 					Err(_) => (IrOp::InvalidOp, None),
 				},
 				// TODO: check for overflow
 				Op::Addi => (
-					IrOp::Addi {
-						dst: i.t,
-						a: i.s,
-						imm: (i.imm_i16() as isize),
-					},
+					IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as isize) },
 					None,
 				),
 				Op::Addiu => (
-					IrOp::Addi {
-						dst: i.t,
-						a: i.s,
-						imm: (i.imm_i16() as isize),
-					},
+					IrOp::Addi { dst: i.t, a: i.s, imm: (i.imm_i16() as isize) },
 					None,
 				),
-				Op::Andi => (
-					IrOp::Andi {
-						dst: i.t,
-						a: i.s,
-						imm: i.imm.into(),
-					},
-					None,
-				),
-				Op::Ori => (
-					IrOp::Ori {
-						dst: i.t,
-						a: i.s,
-						imm: i.imm.into(),
-					},
-					None,
-				),
-				Op::Xori => (
-					IrOp::Xori {
-						dst: i.t,
-						a: i.s,
-						imm: i.imm.into(),
-					},
-					None,
-				),
+				Op::Andi => (IrOp::Andi { dst: i.t, a: i.s, imm: i.imm.into() }, None),
+				Op::Ori => (IrOp::Ori { dst: i.t, a: i.s, imm: i.imm.into() }, None),
+				Op::Xori => (IrOp::Xori { dst: i.t, a: i.s, imm: i.imm.into() }, None),
 				Op::Slti => (
-					IrOp::Sltis {
-						dst: i.t,
-						a: i.s,
-						imm: i.imm_i16().into(),
-					},
+					IrOp::Sltis { dst: i.t, a: i.s, imm: i.imm_i16().into() },
 					None,
 				),
-				Op::Sltiu => (
-					IrOp::Sltiu {
-						dst: i.t,
-						a: i.s,
-						imm: i.imm.into(),
-					},
-					None,
-				),
+				Op::Sltiu => (IrOp::Sltiu { dst: i.t, a: i.s, imm: i.imm.into() }, None),
 				Op::Beq => {
 					let location = self.pc.wrapping_add(i.imm as i16 as usize).wrapping_add(1);
-					(
-						IrOp::Beq {
-							a: i.s,
-							b: i.t,
-							location,
-						},
-						None,
-					)
+					(IrOp::Beq { a: i.s, b: i.t, location }, None)
 				}
 				Op::Bne => {
 					let location = self.pc.wrapping_add(i.imm as i16 as usize).wrapping_add(1);
-					(
-						IrOp::Bne {
-							a: i.s,
-							b: i.t,
-							location,
-						},
-						None,
-					)
+					(IrOp::Bne { a: i.s, b: i.t, location }, None)
 				}
 				Op::Lui => (
-					IrOp::Ori {
-						dst: i.t,
-						a: 0,
-						imm: usize::from(i.imm) << 16,
-					},
+					IrOp::Ori { dst: i.t, a: 0, imm: usize::from(i.imm) << 16 },
 					None,
 				),
 				Op::Lhi => (
-					IrOp::Andi {
-						dst: i.t,
-						a: i.t,
-						imm: 0x0000_ffff,
-					},
-					Some(IrOp::Ori {
-						dst: i.t,
-						a: i.t,
-						imm: usize::from(i.imm) << 16,
-					}),
+					IrOp::Andi { dst: i.t, a: i.t, imm: 0x0000_ffff },
+					Some(IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) << 16 }),
 				),
 				Op::Llo => (
-					IrOp::Andi {
-						dst: i.t,
-						a: i.t,
-						imm: 0xffff_0000,
-					},
-					Some(IrOp::Ori {
-						dst: i.t,
-						a: i.t,
-						imm: usize::from(i.imm),
-					}),
+					IrOp::Andi { dst: i.t, a: i.t, imm: 0xffff_0000 },
+					Some(IrOp::Ori { dst: i.t, a: i.t, imm: usize::from(i.imm) }),
 				),
 				Op::Lb => (
-					IrOp::Li8 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::Li8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Lbu => (
-					IrOp::Lu8 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::Lu8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Lh => (
-					IrOp::Li16 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::Li16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Lhu => (
-					IrOp::Lu16 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::Lu16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Lw => (
-					IrOp::Lu32 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::Lu32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Sb => (
-					IrOp::S8 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::S8 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Sh => (
-					IrOp::S16 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::S16 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::Sw => (
-					IrOp::S32 {
-						reg: i.t,
-						mem: i.s,
-						offset: i.imm_i16().into(),
-					},
+					IrOp::S32 { reg: i.t, mem: i.s, offset: i.imm_i16().into() },
 					None,
 				),
 				Op::J => {
@@ -487,35 +198,15 @@ impl Jit {
 				}
 				Op::Jal => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
-					(
-						IrOp::Jal {
-							link: i.t,
-							location,
-						},
-						None,
-					)
+					(IrOp::Jal { link: i.t, location }, None)
 				}
 				Op::Blez => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
-					(
-						IrOp::Ble {
-							a: i.s,
-							b: 0,
-							location,
-						},
-						None,
-					)
+					(IrOp::Ble { a: i.s, b: 0, location }, None)
 				}
 				Op::Bgtz => {
 					let location = self.pc.wrapping_add(i.imm_i16() as usize + 1);
-					(
-						IrOp::Bgt {
-							a: i.s,
-							b: 0,
-							location,
-						},
-						None,
-					)
+					(IrOp::Bgt { a: i.s, b: 0, location }, None)
 				}
 			};
 			self.address_map.push(self.ir.len());
@@ -625,12 +316,7 @@ impl Registers {
 	pub const A3: usize = 7;
 
 	pub fn new() -> Self {
-		Self {
-			gp: [0; 32],
-			hi: 0,
-			lo: 0,
-			pc: 0,
-		}
+		Self { gp: [0; 32], hi: 0, lo: 0, pc: 0 }
 	}
 }
 

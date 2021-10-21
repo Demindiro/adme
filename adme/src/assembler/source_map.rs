@@ -11,9 +11,7 @@ pub struct SourceMap {
 #[cfg_attr(feature = "wasm", wasm_bindgen)]
 impl SourceMap {
 	pub fn new() -> Self {
-		Self {
-			ip_to_line: HashMap::default(),
-		}
+		Self { ip_to_line: HashMap::default() }
 	}
 
 	pub fn insert(&mut self, ip: u32, line: u32) {
